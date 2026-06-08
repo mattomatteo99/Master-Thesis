@@ -1,0 +1,1012 @@
+---
+title: "Sart and Stroop Analysis"
+format: 
+  pdf:
+    code-overflow: wrap
+    geometry:
+      - left=2cm
+      - right=2cm
+      - top=2cm
+      - bottom=2cm
+execute:
+  message: false
+  warning: false
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(ggdist)
+library(cowplot)
+library(readxl)
+library(car)
+library(effects)
+library(afex)
+library(patchwork)
+library(gridExtra)
+library(ggplot2)
+library(scales)
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(ggdist)
+library(cowplot)
+library(readxl)
+library(car)
+library(effects)
+library(afex)
+library(readxl)
+library(patchwork)
+library(gridExtra)
+library(ggplot2)
+library(scales)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# ============================================================================
+# 1. DEFINE THE PHASES (one row per box)
+# ============================================================================
+phases <- data.frame(
+  step    = 1:6,
+  label   = c("Pre-session",
+              "Baseline",
+              "Pre-task block",
+              "Intervention",
+              "Post-task block",
+              "Closing"),
+  detail  = c("FFMQ + consent",
+              "ECG setup, surveys",
+              "SART + Stroop",
+              "VR / 2D / Control",
+              "SART + Stroop",
+              "Surveys, debrief"),
+  timing  = c("~15 min", "~10 min", "~10 min", "~10 min", "~10 min", "~5 min"),
+  fill    = c("#EEEDFE", "#E1F5EE", "#FAEEDA",
+              "#FAECE7", "#FAEEDA", "#F1EFE8"),
+  border  = c("#534AB7", "#0F6E56", "#854F0B",
+              "#993C1D", "#854F0B", "#5F5E5A"),
+  text_c  = c("#26215C", "#04342C", "#412402",
+              "#4A1B0C", "#412402", "#2C2C2A"),
+  x       = c(1.2, 3.6, 6.0, 1.2, 3.6, 6.0),
+  y       = c(4.0, 4.0, 4.0, 1.5, 1.5, 1.5)
+) %>%
+  mutate(
+    xmin = x - 0.9,
+    xmax = x + 0.9,
+    ymin = y - 0.55,
+    ymax = y + 0.55
+  )
+
+# ============================================================================
+# 2. ARROWS BETWEEN BOXES (within rows)
+# ============================================================================
+arrows_within <- data.frame(
+  x    = c(2.10, 4.50, 2.10, 4.50),
+  xend = c(2.70, 5.10, 2.70, 5.10),
+  y    = c(4.00, 4.00, 1.50, 1.50),
+  yend = c(4.00, 4.00, 1.50, 1.50)
+)
+
+# ============================================================================
+# 3. WRAP PATH from step 3 (right-row 1) to step 4 (left-row 2)
+#    Drawn as a connected polyline: right -> down -> left
+#    Then a separate small segment carries the arrowhead.
+# ============================================================================
+wrap_path <- data.frame(
+  x = c(6.90, 7.00, 7.00, 0.40, 0.40),
+  y = c(4.00, 4.00, 1.50, 1.50, 1.50),
+  grp = 1
+)
+
+# Arrowhead segment: last short bit pointing into box 4
+wrap_arrowhead <- data.frame(
+  x = 0.30, xend = 0.30,   # tiny segment
+  y = 1.50, yend = 1.50
+)
+# Actually we need the arrowhead pointing right INTO box 4 (which sits at x=1.2)
+# So the arrow should come from the left and point right:
+wrap_arrowhead <- data.frame(
+  x = 0.20, xend = 0.30,
+  y = 1.50, yend = 1.50
+)
+
+# ============================================================================
+# 4. BUILD THE PLOT
+# ============================================================================
+p_procedure <- ggplot() +
+  # Boxes
+  geom_rect(data = phases,
+            aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+            fill = phases$fill, color = phases$border,
+            linewidth = 0.5) +
+  # Phase title
+  geom_text(data = phases,
+            aes(x = x, y = y + 0.22, label = label),
+            color = phases$text_c, fontface = "bold", size = 4.2) +
+  # Detail
+  geom_text(data = phases,
+            aes(x = x, y = y - 0.05, label = detail),
+            color = phases$text_c, size = 3.4) +
+  # Timing
+  geom_text(data = phases,
+            aes(x = x, y = y - 0.30, label = timing),
+            color = phases$text_c, size = 3.1, fontface = "italic") +
+  # Within-row arrows
+  geom_segment(data = arrows_within,
+               aes(x = x, xend = xend, y = y, yend = yend),
+               arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
+               color = "gray40", linewidth = 0.5) +
+  # Wrap connector: from box 3 right edge, around, to box 4 left edge
+  geom_path(data = wrap_path,
+            aes(x = x, y = y, group = grp),
+            color = "gray40", linewidth = 0.5) +
+  # Arrowhead pointing into box 4
+  geom_segment(data = wrap_arrowhead,
+               aes(x = x, xend = xend, y = y, yend = yend),
+               arrow = arrow(length = unit(0.18, "cm"), type = "closed"),
+               color = "gray40", linewidth = 0.5) +
+  coord_cartesian(xlim = c(-0.2, 7.4), ylim = c(0.5, 5.0)) +
+  theme_void() +
+  theme(plot.margin = margin(20, 20, 20, 20),
+        plot.background = element_rect(fill = "white", color = NA))
+
+print(p_procedure)
+
+# ============================================================================
+# 5. SAVE TO PNG (matches thesis figures)
+# ============================================================================
+ggsave("Procedure_Flowchart.png", p_procedure,
+       width = 10, height = 5, dpi = 600, bg = "white")
+```
+
+
+## Load Data
+
+```{r}
+# Load data
+SARTdata <- read_excel("SART_data.xlsx") %>%
+  filter(!Participant_ID %in% c(28, 48, 43, 10, 11, 31))
+cat(sprintf("SART participants after exclusions: %d\n", n_distinct(SARTdata$Participant_ID)))
+
+stroop_lmer <- read_csv("stroop_lmer_ready.csv", show_col_types = FALSE) %>%
+  mutate(
+    Timepoint      = factor(Timepoint, levels = c("Baseline", "Post")),
+    Trial_Type     = factor(Trial_Type, levels = c("Congruent", "Neutral", "Incongruent")),
+    Group          = factor(Group, levels = c("Control", "Meditation_2D", "VR_Meditation")),
+    Participant_ID = factor(Participant_ID)
+  ) %>%
+  filter(!Participant_ID %in% c("ID28", "ID48", "ID43", "ID10", "ID11", "ID31"))
+cat(sprintf("Stroop LMM participants after exclusions: %d\n", n_distinct(stroop_lmer$Participant_ID)))
+
+stroop_glmm <- read_csv("stroop_cleaned_ready.csv", show_col_types = FALSE) %>%
+  filter(!Participant_ID %in% c("ID28", "ID48", "ID43", "ID10", "ID11", "ID31")) %>%
+  mutate(
+    Is_Correct     = as.numeric(Is_Correct),
+    Timepoint      = factor(Timepoint, levels = c("Baseline", "Post")),
+    Trial_Type     = factor(Trial_Type, levels = c("Congruent", "Neutral", "Incongruent")),
+    Group          = factor(Group, levels = c("Control", "Meditation_2D", "VR_Meditation")),
+    Participant_ID = factor(Participant_ID)
+  )
+cat(sprintf("Stroop GLMM participants after exclusions: %d\n", n_distinct(stroop_glmm$Participant_ID)))
+```
+
+# SART
+
+```{r}
+#Prepare variables
+SARTdata$Participant_ID <- as.factor(SARTdata$Participant_ID)
+SARTdata$Group <- as.factor(SARTdata$Group)
+SARTdata$Group <- relevel(SARTdata$Group, ref = "Control")
+SARTdata$Timepoint <- as.factor(SARTdata$Timepoint)
+SARTdata$Timepoint <- relevel(SARTdata$Timepoint, ref = "Baseline")
+SARTdata$trial_type <- as.factor(SARTdata$trial_type)
+SARTdata$error_type <- as.factor(SARTdata$error_type)
+SARTdata$accuracy <- as.numeric(as.character(SARTdata$accuracy))
+str(SARTdata)
+table(SARTdata$accuracy)
+```
+
+```{r}
+#Filter dataset for LMER
+SARTdata_lmer <- SARTdata %>%
+filter(trial_type == "Go", RT > 0, !is.na(LogRT))
+table(SARTdata_lmer$trial_type)
+summary(SARTdata_lmer$LogRT)
+```
+
+```{r}
+#LMER model (reaction time)
+lmer_model_sart <- lmer(LogRT ~ Group * Timepoint + (1 | Participant_ID),
+                        data = SARTdata_lmer)
+summary(lmer_model_sart)
+```
+
+```{r}
+#GLMM model (response inhibition)
+glmm_model <- glmer(accuracy ~ Group * Timepoint + (1 | Participant_ID),
+data = SARTdata,
+family = binomial,
+subset = (trial_type == "NoGo"))
+summary(glmm_model)
+```
+
+```{r}
+#GLMM model on omission errors (Missed on a GO trial)
+SARTdata$omission <- ifelse(SARTdata$error_type == "Omission", 1, 0)
+omission_model <- glmer(omission ~ Group * Timepoint + (1 | Participant_ID),
+data = SARTdata,
+family = binomial,
+subset = (trial_type == "Go"))
+summary(omission_model)
+```
+
+```{r}
+# ============================================================================
+# 1. PASTEL COLORS
+# ============================================================================
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# ============================================================================
+# 2. THEME
+# ============================================================================
+thesis_theme <- theme_classic(base_size = 13) +
+  theme(
+    legend.position    = "top",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = 11),
+    legend.key.size    = unit(0.55, "cm"),
+    legend.spacing.x   = unit(0.3, "cm"),
+    plot.title         = element_text(face = "bold", size = 14, hjust = 0,
+                                      margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 10.5, color = "gray35", hjust = 0,
+                                      margin = margin(b = 12),
+                                      lineheight = 1.15),
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_blank(),
+    plot.margin        = margin(15, 20, 15, 15)
+  )
+
+# ============================================================================
+# 3. DATA PREP — use raw RT in ms, same filter as LMER (Go trials, RT > 0)
+# ============================================================================
+sart_participant_means <- SARTdata_lmer %>%
+  group_by(Participant_ID, Group, Timepoint) %>%
+  summarise(mean_RT = mean(RT, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    Timepoint = factor(Timepoint, levels = c("Baseline", "Post")),
+    Group = case_when(
+      as.character(Group) == "Control" ~ "Control",
+      as.character(Group) == "2D"      ~ "2D Meditation",
+      as.character(Group) == "VR"      ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# 4. BRACKETS — staggered heights so Control sits above 2D
+# ============================================================================
+dodge_w  <- 0.8
+g_offset <- c(-dodge_w/3, 0, dodge_w/3)   # Control, 2D, VR
+
+# Find the highest bar + SE across ALL groups (so both brackets clear everything)
+max_overall_top <- sart_participant_means %>%
+  group_by(Group, Timepoint) %>%
+  summarise(top = mean(mean_RT) + sd(mean_RT)/sqrt(n()), .groups = "drop") %>%
+  pull(top) %>% max()
+
+# Two heights: 2D lower, Control higher (above 2D bracket)
+y_2D       <- max_overall_top + 25    # inner bracket
+y_Control  <- max_overall_top + 70    # outer bracket — sits higher
+tick_len   <- 9
+
+br_SART <- data.frame(
+  x_start = c(1 + g_offset[1],  1 + g_offset[2]),  # Control, 2D
+  x_end   = c(2 + g_offset[1],  2 + g_offset[2]),
+  y_pos   = c(y_Control,        y_2D),
+  y_tick  = c(y_Control - tick_len, y_2D - tick_len),
+  label   = c("***",            "*")
+)
+
+# Auto-fit y-axis to clear the highest bracket
+y_top_SART <- y_Control + 25
+y_bot_SART <- 0
+
+# ============================================================================
+# 5. PLOT
+# ============================================================================
+p_SART <- ggplot(sart_participant_means,
+                 aes(x = Timepoint, y = mean_RT, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  geom_segment(data = br_SART, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_end, y = y_pos, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_SART, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_start, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_SART, inherit.aes = FALSE,
+               aes(x = x_end, xend = x_end, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_text(data = br_SART, inherit.aes = FALSE,
+            aes(x = (x_start + x_end)/2, y = y_pos, label = label),
+            size = 4.6, fontface = "bold", vjust = -0.35) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  scale_y_continuous(breaks = seq(0, 1750, by = 250),
+                   expand = expansion(mult = c(0, 0.02))) +
+  coord_cartesian(ylim = c(y_bot_SART, y_top_SART)) +
+  labs(title    = "Reaction Time",                                          # <-- was "SART Reaction Time"
+       subtitle = "Control and 2D Meditation responded faster at Post;\nVR Meditation responded slower at Post",
+       x = NULL, y = "Reaction Time (ms)") +
+  thesis_theme
+
+print(p_SART)
+
+# ============================================================================
+# 6. SAVE
+# ============================================================================
+ggsave("SART_RT.png", p_SART, width = 7, height = 5.5,
+       dpi = 600, bg = "white")
+```
+
+```{r}
+# SART models — renamed to avoid collision with Stroop
+sart_lmer  <- lmer(LogRT ~ Group * Timepoint + (1 | Participant_ID),
+                   data = SARTdata_lmer)
+summary(sart_lmer)
+
+sart_glmm  <- glmer(accuracy ~ Group * Timepoint + (1 | Participant_ID),
+                    data = SARTdata,
+                    family = binomial,
+                    subset = (trial_type == "NoGo"))
+summary(sart_glmm)
+
+SARTdata$omission <- ifelse(SARTdata$error_type == "Omission", 1, 0)
+sart_omission <- glmer(omission ~ Group * Timepoint + (1 | Participant_ID),
+                       data = SARTdata,
+                       family = binomial,
+                       subset = (trial_type == "Go"))
+summary(sart_omission)
+```
+
+```{r}
+emm_options(pbkrtest.limit = 13925, lmerTest.limit = 13925)
+
+# SART RT — within group changes over time
+emmeans(sart_lmer, pairwise ~ Timepoint | Group)
+# SART RT — group differences at each timepoint
+emmeans(sart_lmer, pairwise ~ Group | Timepoint)
+
+# SART Accuracy (NoGo) — within group changes over time
+emmeans(sart_glmm, pairwise ~ Timepoint | Group, type = "response")
+# SART Accuracy (NoGo) — group differences at each timepoint
+emmeans(sart_glmm, pairwise ~ Group | Timepoint, type = "response")
+```
+
+# STROOP
+
+```{r}
+# Stroop LMM (reaction time) and GLMM (accuracy)
+stroop_lmer_model <- lmer(LogRT ~ Trial_Type * Group * Timepoint + (1 | Participant_ID),
+                          data = stroop_lmer)
+print(summary(stroop_lmer_model), correlation = FALSE)
+
+stroop_glmm_model <- glmer(Is_Correct ~ Trial_Type * Group * Timepoint + (1 | Participant_ID),
+                           data = stroop_glmm,
+                           family = binomial,
+                           control = glmerControl(optimizer = "bobyqa",
+                                                  optCtrl = list(maxfun = 2e5)))
+print(summary(stroop_glmm_model), correlation = FALSE)
+```
+
+```{r}
+# Contrasts - Overall RT
+emm_options(msg.interaction = FALSE)
+emm_options(pbkrtest.limit = 10027, lmerTest.limit = 10027)
+
+emm_overall <- emmeans(stroop_lmer_model, ~ Group * Timepoint)
+interaction_contrasts <- contrast(emm_overall,
+                                  interaction = c("pairwise", "revpairwise"))
+interaction_table <- summary(interaction_contrasts, infer = TRUE) %>%
+  as.data.frame() %>%
+  mutate(
+    df = round(df, 0),
+    Comparison = case_when(
+      Group_pairwise == "Control - Meditation_2D"       ~ "Control vs 2D Meditation",
+      Group_pairwise == "Control - VR_Meditation"       ~ "Control vs VR Meditation",
+      Group_pairwise == "Meditation_2D - VR_Meditation" ~ "2D Meditation vs VR Meditation"
+    ),
+    Estimate = round(estimate, 4),
+    SE       = round(SE, 4),
+    t        = round(t.ratio, 3),
+    p        = round(p.value, 4)
+  ) %>%
+  select(Comparison, Estimate, SE, df, t, p)
+print(interaction_table, row.names = FALSE)
+
+# Estimated means in milliseconds
+emm_df_ms <- as.data.frame(emmeans(stroop_lmer_model, ~ Timepoint | Group)) %>%
+  mutate(
+    RT_ms    = round(exp(emmean), 1),
+    RT_lower = round(exp(lower.CL), 1),
+    RT_upper = round(exp(upper.CL), 1)
+  ) %>%
+  select(Group, Timepoint, RT_ms, RT_lower, RT_upper)
+print(emm_df_ms, row.names = FALSE)
+
+change_ms <- emm_df_ms %>%
+  select(Group, Timepoint, RT_ms) %>%
+  pivot_wider(names_from = Timepoint, values_from = RT_ms) %>%
+  mutate(Change_ms = round(Post - Baseline, 1))
+print(change_ms, row.names = FALSE)
+```
+
+```{r}
+# Stroop interference model
+interference_scores <- stroop_lmer %>%
+  filter(Trial_Type %in% c("Congruent", "Incongruent")) %>%
+  group_by(Participant_ID, Group, Timepoint, Trial_Type) %>%
+  summarise(mean_RT = mean(RT), .groups = "drop") %>%
+  pivot_wider(names_from = Trial_Type, values_from = mean_RT) %>%
+  mutate(Interference = Incongruent - Congruent)
+
+interference_model <- lmer(Interference ~ Group * Timepoint + (1 | Participant_ID),
+                           data = interference_scores)
+summary(interference_model)
+
+emm_interference <- emmeans(interference_model, ~ Group * Timepoint)
+interference_contrasts <- contrast(emm_interference,
+                                   interaction = c("pairwise", "revpairwise"))
+interference_table <- summary(interference_contrasts, infer = TRUE) %>%
+  as.data.frame() %>%
+  mutate(
+    df = round(df, 0),
+    Comparison = case_when(
+      Group_pairwise == "Control - Meditation_2D"       ~ "Control vs 2D Meditation",
+      Group_pairwise == "Control - VR_Meditation"       ~ "Control vs VR Meditation",
+      Group_pairwise == "Meditation_2D - VR_Meditation" ~ "2D Meditation vs VR Meditation"
+    ),
+    Estimate = round(estimate, 1),
+    SE       = round(SE, 1),
+    t        = round(t.ratio, 3),
+    p        = round(p.value, 4)
+  ) %>%
+  select(Comparison, Estimate, SE, df, t, p)
+print(interference_table, row.names = FALSE)
+```
+
+```{r}
+# GLMM model (accuracy)
+stroop_glmm_model <- glmer(Is_Correct ~ Trial_Type * Group * Timepoint + (1 | Participant_ID),
+                           data = stroop_glmm,
+                           family = binomial,
+                           control = glmerControl(optimizer = "bobyqa",
+                                                  optCtrl = list(maxfun = 2e5)))
+print(summary(stroop_glmm_model), correlation = FALSE)
+```
+
+```{r}
+# Emmeans for accuracy
+emm_options(pbkrtest.limit = 10469, lmerTest.limit = 10469)
+emm_group_time <- emmeans(stroop_glmm_model, ~ Group * Timepoint, type = "response")
+print(emm_group_time)
+
+acc_interaction <- contrast(emm_group_time,
+                            interaction = c("pairwise", "revpairwise"))
+acc_table <- summary(acc_interaction, infer = TRUE) %>%
+  as.data.frame() %>%
+  mutate(
+    df = round(df, 0),
+    Comparison = case_when(
+      Group_pairwise == "Control / Meditation_2D"       ~ "Control vs 2D Meditation",
+      Group_pairwise == "Control / VR_Meditation"       ~ "Control vs VR Meditation",
+      Group_pairwise == "Meditation_2D / VR_Meditation" ~ "2D Meditation vs VR Meditation"
+    ),
+    Estimate = round(odds.ratio, 4),
+    SE       = round(SE, 4),
+    z        = round(z.ratio, 3),
+    p        = round(p.value, 4)
+  ) %>%
+  select(Comparison, Estimate, SE, df, z, p)
+print(acc_table, row.names = FALSE)
+```
+
+```{r}
+
+# ============================================================================
+# 1. PASTEL COLORS
+# ============================================================================
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# ============================================================================
+# 2. THEME — note legend.title removed
+# ============================================================================
+thesis_theme <- theme_classic(base_size = 13) +
+  theme(
+    legend.position    = "top",
+    legend.title       = element_blank(),                    # <-- "Group" removed
+    legend.text        = element_text(size = 11),
+    legend.key.size    = unit(0.55, "cm"),
+    legend.spacing.x   = unit(0.3, "cm"),
+    plot.title         = element_text(face = "bold", size = 14, hjust = 0,
+                                      margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 10.5, color = "gray35", hjust = 0,
+                                      margin = margin(b = 12),
+                                      lineheight = 1.15),    # for wrapped lines
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_blank(),
+    plot.margin        = margin(15, 20, 15, 15)
+  )
+
+# ============================================================================
+# 3. DATA PREP  (unchanged)
+# ============================================================================
+participant_means <- stroop_lmer %>%
+  group_by(Participant_ID, Group, Timepoint) %>%
+  summarise(mean_RT = mean(RT), .groups = "drop") %>%
+  mutate(
+    Timepoint = factor(Timepoint, levels = c("Baseline", "Post")),
+    Group = case_when(
+      Group == "Control"       ~ "Control",
+      Group == "Meditation_2D" ~ "2D Meditation",
+      Group == "VR_Meditation" ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+participant_interference <- stroop_lmer %>%
+  filter(Trial_Type %in% c("Congruent", "Incongruent")) %>%
+  group_by(Participant_ID, Group, Timepoint, Trial_Type) %>%
+  summarise(mean_RT = mean(RT), .groups = "drop") %>%
+  pivot_wider(names_from = Trial_Type, values_from = mean_RT) %>%
+  mutate(
+    Interference = Incongruent - Congruent,
+    Timepoint = factor(Timepoint, levels = c("Baseline", "Post")),
+    Group = case_when(
+      Group == "Control"       ~ "Control",
+      Group == "Meditation_2D" ~ "2D Meditation",
+      Group == "VR_Meditation" ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+accuracy_means <- stroop_glmm %>%
+  group_by(Participant_ID, Group, Timepoint) %>%
+  summarise(accuracy = mean(Is_Correct), .groups = "drop") %>%
+  mutate(
+    Timepoint = factor(Timepoint, levels = c("Baseline", "Post")),
+    Group = case_when(
+      Group == "Control"       ~ "Control",
+      Group == "Meditation_2D" ~ "2D Meditation",
+      Group == "VR_Meditation" ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# 4. PLOT 1 — REACTION TIME
+# ============================================================================
+dodge_w  <- 0.8
+g_offset <- c(-dodge_w/3, 0, dodge_w/3)
+
+post_tops <- participant_means %>%
+  filter(Timepoint == "Post", Group %in% c("Control", "VR Meditation")) %>%
+  group_by(Group) %>%
+  summarise(top = mean(mean_RT) + sd(mean_RT)/sqrt(n()), .groups = "drop")
+
+bracket_y <- max(post_tops$top) + 90
+tick_len  <- 35
+
+br_RT_between <- data.frame(
+  x_start = 2 + g_offset[1],
+  x_end   = 2 + g_offset[3],
+  y_pos   = bracket_y,
+  y_tick  = bracket_y - tick_len,
+  label   = "**"
+)
+
+rt_max   <- max(participant_means$mean_RT, na.rm = TRUE)
+y_top_RT <- max(bracket_y * 1.10, rt_max + 80)
+
+p_RT <- ggplot(participant_means,
+               aes(x = Timepoint, y = mean_RT, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  geom_segment(data = br_RT_between, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_end, y = y_pos, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_RT_between, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_start, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_RT_between, inherit.aes = FALSE,
+               aes(x = x_end, xend = x_end, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_text(data = br_RT_between, inherit.aes = FALSE,
+            aes(x = (x_start + x_end)/2, y = y_pos, label = label),
+            size = 5, fontface = "bold", vjust = -0.35) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  scale_y_continuous(breaks = seq(0, 2200, by = 250),
+                     expand = expansion(mult = c(0, 0.02))) +
+  coord_cartesian(ylim = c(0, y_top_RT)) +
+  labs(title    = "Reaction Time",
+       subtitle = "VR Meditation showed greater improvement\nfrom Baseline to Post than Control (p = .002)",
+       x = NULL, y = "Reaction Time (ms)") +
+  thesis_theme
+
+# ============================================================================
+# 5. PLOT 2 — INTERFERENCE
+# ============================================================================
+int_range <- range(participant_interference$Interference, na.rm = TRUE)
+int_ylim  <- c(min(int_range[1] - 30, -50),
+               max(int_range[2] + 30, 620))
+
+p_Interference <- ggplot(participant_interference,
+                         aes(x = Timepoint, y = Interference, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  scale_y_continuous(breaks = seq(-200, 800, by = 100),
+                     expand = expansion(mult = c(0.02, 0.05))) +
+  coord_cartesian(ylim = int_ylim) +
+  labs(title    = "Stroop Interference Score",
+       subtitle = "Interference reduced from Baseline to Post;\nno significant group differences in change",
+       x = NULL,
+       y = "Interference Score (ms)\nIncongruent \u2212 Congruent RT") +
+  thesis_theme
+
+# ============================================================================
+# 6. PLOT 3 — ACCURACY
+# ============================================================================
+p_Accuracy <- ggplot(accuracy_means,
+                     aes(x = Timepoint, y = accuracy * 100, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  scale_y_continuous(limits = c(85, 100), breaks = seq(85, 100, by = 5),
+                     oob = squish, expand = expansion(mult = c(0, 0.02))) +
+  labs(title    = "Stroop Accuracy",
+       subtitle = "No significant group differences\nor changes over time",
+       x = NULL, y = "Accuracy (%)") +
+  thesis_theme
+
+print(p_RT)
+print(p_Interference)
+print(p_Accuracy)
+
+# ============================================================================
+# 7. SAVE TO HIGH-RES PNG
+# ============================================================================
+ggsave("Stroop_RT.png",           p_RT,           width = 7, height = 5.5,
+       dpi = 600, bg = "white")
+ggsave("Stroop_Interference.png", p_Interference, width = 7, height = 5.5,
+       dpi = 600, bg = "white")
+ggsave("Stroop_Accuracy.png",     p_Accuracy,     width = 7, height = 5.5,
+       dpi = 600, bg = "white")
+
+```
+```{r}
+library(patchwork)
+library(cowplot)
+
+# ============================================================================
+# COMBINED FIGURE — Stroop RT + SART RT, each in its own bordered box
+# with boxed A/B badges in the top-left corner
+# ============================================================================
+
+panel_border_theme <- theme(
+  plot.background  = element_rect(fill = NA, color = "black", linewidth = 0.5),
+  legend.position  = "none"
+)
+
+p_RT_combined <- p_RT +
+  labs(title = "Stroop", subtitle = NULL) +
+  scale_y_continuous(breaks = seq(0, 1750, by = 250),
+                     expand = expansion(mult = c(0, 0.02))) +
+  panel_border_theme
+
+p_SART_combined <- p_SART +
+  labs(title = "SART", subtitle = NULL) +
+  scale_y_continuous(breaks = seq(0, 800, by = 100),
+                     expand = expansion(mult = c(0, 0.02))) +
+  panel_border_theme
+
+# Helper: overlay a small bordered box with a centered letter
+add_corner_badge <- function(plot, letter,
+                             x = 0.035, y = 0.96,
+                             box_w = 0.045, box_h = 0.07) {
+  ggdraw(plot) +
+    # White-filled bordered box
+    draw_grob(
+      grid::rectGrob(
+        x = x, y = y,
+        width = box_w, height = box_h,
+        just = c("left", "top"),
+        gp = grid::gpar(fill = "white",
+                        col  = "black",
+                        lwd  = 0.8)
+      )
+    ) +
+    # Letter centered inside the box
+    draw_text(
+      letter,
+      x = x + box_w/2,
+      y = y - box_h/2,
+      hjust = 0.5, vjust = 0.5,
+      size = 13, fontface = "bold"
+    )
+}
+
+p_RT_badged   <- add_corner_badge(p_RT_combined,   "A",
+                                  box_w = 0.055, box_h = 0.075)
+p_SART_badged <- add_corner_badge(p_SART_combined, "B",
+                                  box_w = 0.055, box_h = 0.075)
+
+# Legend extracted from p_RT before its legend was stripped
+legend_plot <- get_legend(
+  p_RT + theme(legend.position = "top",
+               legend.title    = element_blank(),
+               legend.text     = element_text(size = 11),
+               legend.key.size = unit(0.55, "cm"))
+)
+
+panels_row <- (p_RT_badged | p_SART_badged)
+
+combined_RT <- wrap_plots(
+  legend_plot,
+  panels_row,
+  ncol = 1,
+  heights = c(0.08, 1)
+)
+
+combined_RT <- combined_RT +
+  plot_annotation(
+    title = "Reaction Time Across Cognitive Tasks",
+    theme = theme(plot.title = element_text(face = "bold", size = 15,
+                                            hjust = 0.5,
+                                            margin = margin(b = 8)))
+  )
+
+print(combined_RT)
+
+ggsave("Combined_RT.png", combined_RT,
+       width = 12, height = 6, dpi = 600, bg = "white")
+```
+
+
+```{r}
+################################################################################
+# STROOP vs SART — RT COMPARISON SCRIPT
+################################################################################
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(dplyr)
+library(tidyr)
+
+emm_options(msg.interaction = FALSE)
+
+# Helper function to handle both t.ratio and z.ratio
+format_contrast <- function(contrast_obj, has_group = TRUE) {
+  df <- summary(contrast_obj, infer = TRUE) %>% as.data.frame()
+  
+  # Detect ratio column name
+  ratio_col <- if ("t.ratio" %in% names(df)) "t.ratio" else "z.ratio"
+  df_col    <- if ("df" %in% names(df)) "df" else NULL
+  
+  df$Estimate <- round(df$estimate, 4)
+  df$SE       <- round(df$SE, 4)
+  df$Stat     <- round(df[[ratio_col]], 3)
+  df$p        <- round(df$p.value, 4)
+  if (!is.null(df_col)) df$df <- round(df[[df_col]], 0)
+  
+  df
+}
+
+################################################################################
+# 1. WITHIN-GROUP BASELINE -> POST CHANGE
+################################################################################
+cat("\n================================================================\n")
+cat("1. WITHIN-GROUP BASELINE -> POST CHANGE (log scale)\n")
+cat("================================================================\n")
+
+cat("\n----- STROOP -----\n")
+emm_stroop_wg <- emmeans(lmer_model_stroop, ~ Timepoint | Group)
+within_stroop <- contrast(emm_stroop_wg, method = "revpairwise")
+stroop_within <- format_contrast(within_stroop) %>%
+  select(Group, contrast, Estimate, SE, df, Stat, p)
+print(stroop_within, row.names = FALSE)
+
+cat("\n----- SART -----\n")
+emm_sart_wg <- emmeans(lmer_model_sart, ~ Timepoint | Group)
+within_sart <- contrast(emm_sart_wg, method = "revpairwise")
+sart_within <- format_contrast(within_sart) %>%
+  select(Group, contrast, Estimate, SE, df, Stat, p)
+print(sart_within, row.names = FALSE)
+
+################################################################################
+# 2. PAIRWISE GROUP CONTRASTS ON BASELINE -> POST CHANGE
+################################################################################
+cat("\n================================================================\n")
+cat("2. PAIRWISE GROUP CONTRASTS ON BASELINE -> POST CHANGE\n")
+cat("================================================================\n")
+
+cat("\n----- STROOP -----\n")
+emm_stroop_gt <- emmeans(stroop_lmer_model_stroop, ~ Group * Timepoint)
+interact_stroop <- contrast(emm_stroop_gt, interaction = c("pairwise", "revpairwise"))
+stroop_interact <- format_contrast(interact_stroop) %>%
+  select(Group_pairwise, Estimate, SE, df, Stat, p)
+print(stroop_interact, row.names = FALSE)
+
+cat("\n----- SART -----\n")
+emm_sart_gt <- emmeans(stroop_lmer_model_sart, ~ Group * Timepoint)
+interact_sart <- contrast(emm_sart_gt, interaction = c("pairwise", "revpairwise"))
+sart_interact <- format_contrast(interact_sart) %>%
+  select(Group_pairwise, Estimate, SE, df, Stat, p)
+print(sart_interact, row.names = FALSE)
+
+################################################################################
+# 3. BASELINE EQUIVALENCE CHECK
+################################################################################
+cat("\n================================================================\n")
+cat("3. BASELINE EQUIVALENCE CHECK (group comparisons at Baseline)\n")
+cat("================================================================\n")
+
+cat("\n----- STROOP -----\n")
+emm_stroop_base <- emmeans(stroop_lmer_model_stroop, ~ Group, at = list(Timepoint = "Baseline"))
+base_stroop <- contrast(emm_stroop_base, method = "pairwise")
+stroop_base <- format_contrast(base_stroop) %>%
+  select(contrast, Estimate, SE, df, Stat, p)
+print(stroop_base, row.names = FALSE)
+
+cat("\n----- SART -----\n")
+emm_sart_base <- emmeans(stroop_lmer_model_sart, ~ Group, at = list(Timepoint = "Baseline"))
+base_sart <- contrast(emm_sart_base, method = "pairwise")
+sart_base <- format_contrast(base_sart) %>%
+  select(contrast, Estimate, SE, df, Stat, p)
+print(sart_base, row.names = FALSE)
+
+################################################################################
+# 4. ESTIMATED MEANS IN MILLISECONDS
+################################################################################
+cat("\n================================================================\n")
+cat("4. ESTIMATED MEANS IN MILLISECONDS\n")
+cat("================================================================\n")
+
+# Helper to back-transform: specify log base (exp for natural log, 10^ for log10)
+format_emm_ms <- function(emm_obj, log_base = "natural") {
+  df <- as.data.frame(emm_obj)
+  lcl_col <- if ("lower.CL" %in% names(df)) "lower.CL" else "asymp.LCL"
+  ucl_col <- if ("upper.CL" %in% names(df)) "upper.CL" else "asymp.UCL"
+  
+  back_transform <- if (log_base == "natural") exp else function(x) 10^x
+  
+  df$RT_ms    <- round(back_transform(df$emmean), 1)
+  df$RT_lower <- round(back_transform(df[[lcl_col]]), 1)
+  df$RT_upper <- round(back_transform(df[[ucl_col]]), 1)
+  
+  df %>% select(Group, Timepoint, RT_ms, RT_lower, RT_upper)
+}
+
+cat("\n----- STROOP -----\n")
+stroop_ms <- format_emm_ms(emmeans(stroop_lmer_model_stroop, ~ Timepoint | Group), 
+                           log_base = "natural")
+print(stroop_ms, row.names = FALSE)
+
+cat("\n----- SART -----\n")
+sart_ms <- format_emm_ms(emmeans(stroop_lmer_model_sart, ~ Timepoint | Group), 
+                         log_base = "log10")
+print(sart_ms, row.names = FALSE)
+
+################################################################################
+# 5. CHANGE IN MILLISECONDS (Post - Baseline)
+################################################################################
+cat("\n================================================================\n")
+cat("5. CHANGE IN MILLISECONDS (Post - Baseline)\n")
+cat("================================================================\n")
+
+cat("\n----- STROOP -----\n")
+stroop_change_ms <- stroop_ms %>%
+  select(Group, Timepoint, RT_ms) %>%
+  pivot_wider(names_from = Timepoint, values_from = RT_ms) %>%
+  mutate(Change_ms = round(Post - Baseline, 1),
+         Direction = ifelse(Change_ms < 0, "Faster", "Slower"))
+print(stroop_change_ms, row.names = FALSE)
+
+cat("\n----- SART -----\n")
+sart_change_ms <- sart_ms %>%
+  select(Group, Timepoint, RT_ms) %>%
+  pivot_wider(names_from = Timepoint, values_from = RT_ms) %>%
+  mutate(Change_ms = round(Post - Baseline, 1),
+         Direction = ifelse(Change_ms < 0, "Faster", "Slower"))
+print(sart_change_ms, row.names = FALSE)
+
+################################################################################
+# 6. STANDARDIZED EFFECT SIZES (Cohen's d for within-group change)
+################################################################################
+cat("\n================================================================\n")
+cat("6. STANDARDIZED EFFECT SIZES (Cohen's d for within-group change)\n")
+cat("================================================================\n")
+
+# Helper to handle both lower.CL and asymp.LCL
+format_effsize <- function(eff_obj) {
+  df <- summary(eff_obj) %>% as.data.frame()
+  lcl_col <- if ("lower.CL" %in% names(df)) "lower.CL" else "asymp.LCL"
+  ucl_col <- if ("upper.CL" %in% names(df)) "upper.CL" else "asymp.UCL"
+  
+  df$Cohens_d <- round(df$effect.size, 3)
+  df$SE       <- round(df$SE, 3)
+  df$LCL      <- round(df[[lcl_col]], 3)
+  df$UCL      <- round(df[[ucl_col]], 3)
+  
+  df %>% select(Group, contrast, Cohens_d, SE, LCL, UCL)
+}
+
+cat("\n----- STROOP -----\n")
+stroop_d <- eff_size(emm_stroop_wg, sigma = sigma(stroop_lmer_model_stroop), 
+                     edf = df.residual(stroop_lmer_model_stroop))
+print(format_effsize(stroop_d), row.names = FALSE)
+
+cat("\n----- SART -----\n")
+sart_d <- eff_size(emm_sart_wg, sigma = sigma(lmer_model_sart), 
+                   edf = df.residual(lmer_model_sart))
+print(format_effsize(sart_d), row.names = FALSE)
+
+cat("\n================================================================\n")
+cat("END OF COMPARISON SCRIPT\n")
+cat("================================================================\n")
+```
+

@@ -1,0 +1,1920 @@
+---
+title: "HR and HRV preprocessing"
+format: html
+editor: visual
+---
+
+```{r}
+
+# ============================================================================
+# UNIVERSAL SETUP
+# ============================================================================
+# Loads required libraries, defines file paths, and creates the two core
+# functions used throughout the preprocessing pipeline:
+#   - load_participant(): reads and merges Shimmer CSV recordings
+#   - label_event():      assigns event labels to time windows
+# ============================================================================
+
+library(readr)
+library(dplyr)
+library(lubridate)
+
+# ── File paths ────────────────────────────────────────────────────────────────
+vr_path       <- "C:/Users/matte/OneDrive/Desktop/Experiments/1.Group VR"
+group_2d_path <- "C:/Users/matte/OneDrive/Desktop/Experiments/2.Group 2D"
+control_path  <- "C:/Users/matte/OneDrive/Desktop/Experiments/3.active control"
+
+# ── Column definitions ────────────────────────────────────────────────────────
+# mV.2 = LL-RA Lead II ECG signal
+common_cols <- c("ms", "datetime_local", "BPM.2", "ms.3", "mV.2")
+
+# ── load_participant() ────────────────────────────────────────────────────────
+# Reads all CSV recordings for one participant, merges them into a single
+# dataframe, converts timestamps to local time, and initialises event column.
+load_participant <- function(path, id) {
+  files <- list.files(file.path(path, id), pattern = "\\.csv$", full.names = TRUE)
+
+  recordings <- list()
+  for (i in seq_along(files)) {
+    temp <- read.delim(files[i], skip = 2, header = TRUE, sep = "\t")
+    temp <- temp[-1, ]
+    temp[] <- lapply(temp, function(x) if (is.character(x)) as.numeric(x) else x)
+    temp$datetime_local <- as.POSIXct(temp$ms / 1000, origin = "1970-01-01", tz = "UTC")
+    attributes(temp$datetime_local)$tzone <- "Europe/Rome"
+
+    if (all(common_cols %in% names(temp))) {
+      temp <- temp[, common_cols]
+      names(temp)[names(temp) == "ms.3"] <- "IBI_ms"
+      names(temp)[names(temp) == "mV.2"] <- "ECG_mV"
+    } else {
+      fallback_cols <- common_cols[common_cols %in% names(temp)]
+      temp <- temp[, fallback_cols]
+      if ("ms.3" %in% names(temp)) names(temp)[names(temp) == "ms.3"] <- "IBI_ms"
+      if ("mV.2" %in% names(temp)) names(temp)[names(temp) == "mV.2"] <- "ECG_mV"
+      if (!"ECG_mV" %in% names(temp)) temp$ECG_mV <- NA
+      if (!"IBI_ms" %in% names(temp)) temp$IBI_ms <- NA
+    }
+
+    recordings[[i]] <- temp
+  }
+
+  merged        <- do.call(rbind, recordings)
+  merged$event  <- NA
+  return(merged)
+}
+
+# ── label_event() ─────────────────────────────────────────────────────────────
+# Assigns an event label to all rows within a specified time window.
+label_event <- function(data, event_name, start_time, end_time = NULL,
+                         recording_date, tz = "Europe/Rome") {
+  start <- as.POSIXct(paste(recording_date, start_time), tz = tz)
+  end   <- if (is.null(end_time)) max(data$datetime_local) else
+           as.POSIXct(paste(recording_date, end_time), tz = tz)
+  data$event[data$datetime_local >= start & data$datetime_local <= end] <- event_name
+  return(data)
+}
+
+cat("✅ Setup complete — load_participant() and label_event() ready\n")
+```
+
+```{r}
+# ===== ID55 (VR Group) =====
+id55_data <- load_participant(vr_path, "ID55")
+recording_date <- format(min(id55_data$datetime_local), "%Y-%m-%d")
+
+id55_data <- label_event(id55_data, "baseline",     "17:40:47", "17:42:56", recording_date)
+id55_data <- label_event(id55_data, "task1",        "17:47:23", "17:57:42", recording_date)
+id55_data <- label_event(id55_data, "intervention", "18:03:17", "18:15:03", recording_date)
+id55_data <- label_event(id55_data, "task2",        "18:18:37",  NULL,      recording_date)
+
+print(table(id55_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID48 (VR Group) =====
+id48_data <- load_participant(vr_path, "ID48")
+recording_date <- format(min(id48_data$datetime_local), "%Y-%m-%d")
+
+id48_data <- label_event(id48_data, "baseline",     "15:09:22", "15:11:33", recording_date)
+id48_data <- label_event(id48_data, "task1",        "15:15:52", "15:24:50", recording_date)
+id48_data <- label_event(id48_data, "intervention", "15:32:29", "15:44:00", recording_date)
+id48_data <- label_event(id48_data, "task2",        "15:47:00", "15:55:36", recording_date)
+
+print(table(id48_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID44 (VR Group) =====
+id44_data <- load_participant(vr_path, "ID44")
+recording_date <- format(min(id44_data$datetime_local), "%Y-%m-%d")
+
+id44_data <- label_event(id44_data, "baseline",     "10:08:57", "10:11:07", recording_date)
+id44_data <- label_event(id44_data, "task1",        "10:17:38", "10:27:37", recording_date)
+id44_data <- label_event(id44_data, "intervention", "10:34:02", "10:46:36", recording_date)
+id44_data <- label_event(id44_data, "task2",        "10:49:51", "10:59:01", recording_date)
+
+print(table(id44_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID53 (VR Group) =====
+id53_data <- load_participant(vr_path, "ID53")
+recording_date <- format(min(id53_data$datetime_local), "%Y-%m-%d")
+
+id53_data <- label_event(id53_data, "baseline",     "15:57:57", "16:00:06", recording_date)
+id53_data <- label_event(id53_data, "task1",        "16:14:09", "16:23:06", recording_date)
+id53_data <- label_event(id53_data, "intervention", "16:28:54", "16:40:41", recording_date)
+id53_data <- label_event(id53_data, "task2",        "16:43:49", "16:52:48", recording_date)
+
+print(table(id53_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID19 (VR Group) =====
+id19_data <- load_participant(vr_path, "ID19")
+recording_date <- format(min(id19_data$datetime_local), "%Y-%m-%d")
+
+id19_data <- label_event(id19_data, "baseline",     "11:36:15", "11:38:21", recording_date)
+id19_data <- label_event(id19_data, "task1",        "11:44:48", "11:54:38", recording_date)
+id19_data <- label_event(id19_data, "intervention", "12:04:00", "12:14:00", recording_date)
+id19_data <- label_event(id19_data, "task2",        "12:25:10", "12:34:16", recording_date)
+
+print(table(id19_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID14 (VR Group) =====
+id14_files <- list.files(file.path(vr_path, "ID14"), pattern = "\\.csv$", full.names = TRUE)
+cat("Files found:", length(id14_files), "\n")
+id14_list <- list()
+for(i in seq_along(id14_files)) {
+  temp <- read.delim(id14_files[i], skip = 2, header = TRUE, sep = "\t")
+  temp <- temp[-1, ]
+  temp[] <- lapply(temp, function(x) if(is.character(x)) as.numeric(x) else x)
+  temp$datetime_local <- as.POSIXct(temp$ms / 1000, origin = "1970-01-01", tz = "UTC")
+  attributes(temp$datetime_local)$tzone <- "Europe/Rome"
+  if(all(c("ms", "datetime_local", "BPM.2", "ms.3", "mV.2") %in% names(temp))) {
+    temp <- temp[, c("ms", "datetime_local", "BPM.2", "ms.3", "mV.2")]
+    names(temp)[names(temp) == "ms.3"] <- "IBI_ms"
+    names(temp)[names(temp) == "mV.2"] <- "ECG_mV"
+  }
+  id14_list[[i]] <- temp
+  cat("Recording", i, ":", nrow(temp), "rows,",
+      format(min(temp$datetime_local), "%H:%M:%S"), "to",
+      format(max(temp$datetime_local), "%H:%M:%S"), "\n")
+}
+id14_data <- do.call(rbind, id14_list)
+cat("\nMerged data:", nrow(id14_data), "rows\n")
+recording_date <- format(min(id14_data$datetime_local), "%Y-%m-%d")
+id14_data$event <- NA
+id14_data <- label_event(id14_data, "baseline",     "10:03:00", "10:05:00", recording_date)
+id14_data <- label_event(id14_data, "task1",        "10:17:00", "10:26:00", recording_date)
+id14_data <- label_event(id14_data, "intervention", "10:32:00", "10:42:00", recording_date)
+# task2 part 1: until end of recording 2
+id14_data$event[id14_data$datetime_local >= as.POSIXct(paste(recording_date, "10:44:00"), tz = "Europe/Rome") &
+                id14_data$datetime_local <= max(id14_list[[2]]$datetime_local)] <- "task2"
+# task2 part 2: after gap in recording 3
+id14_data <- label_event(id14_data, "task2", "10:52:00", "10:54:00", recording_date)
+print(table(id14_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID24 (VR Group) =====
+id24_data <- load_participant(vr_path, "ID24")
+recording_date <- format(min(id24_data$datetime_local), "%Y-%m-%d")
+
+id24_data <- label_event(id24_data, "baseline",     "16:17:40", "16:20:27", recording_date)
+id24_data <- label_event(id24_data, "task1",        "16:28:22", "16:38:02", recording_date)
+id24_data <- label_event(id24_data, "intervention", "16:44:35", "16:56:04", recording_date)
+id24_data <- label_event(id24_data, "task2",        "16:59:03", "17:07:46", recording_date)
+
+
+print(table(id24_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID3 (VR Group) =====
+# Note: SD card recording - BPM instead of BPM.2, IBI in ms.1 instead of ms.3
+id3_files <- list.files(file.path(vr_path, "ID3"), pattern = "\\.csv$", full.names = TRUE)
+cat("Files found:", length(id3_files), "\n")
+id3_list <- list()
+for(i in seq_along(id3_files)) {
+  temp <- read.delim(id3_files[i], skip = 2, header = TRUE, sep = "\t")
+  temp <- temp[-1, ]
+  temp[] <- lapply(temp, function(x) if(is.character(x)) as.numeric(x) else x)
+  temp$datetime_local <- as.POSIXct(temp$ms / 1000, origin = "1970-01-01", tz = "UTC")
+  attributes(temp$datetime_local)$tzone <- "Europe/Rome"
+  if(all(c("ms", "datetime_local", "BPM", "ms.1", "mV.2") %in% names(temp))) {
+    temp <- temp[, c("ms", "datetime_local", "BPM", "ms.1", "mV.2")]
+    names(temp)[names(temp) == "BPM"]  <- "BPM.2"
+    names(temp)[names(temp) == "ms.1"] <- "IBI_ms"
+    names(temp)[names(temp) == "mV.2"] <- "ECG_mV"
+  }
+  id3_list[[i]] <- temp
+  cat("Recording", i, ":", nrow(temp), "rows,",
+      format(min(temp$datetime_local), "%H:%M:%S"), "to",
+      format(max(temp$datetime_local), "%H:%M:%S"), "\n")
+}
+id3_data <- do.call(rbind, id3_list)
+cat("\nMerged data:", nrow(id3_data), "rows\n")
+recording_date <- format(min(id3_data$datetime_local), "%Y-%m-%d")
+id3_data$event <- NA
+id3_data <- label_event(id3_data, "baseline",     "15:35:00", "15:38:00", recording_date)
+id3_data <- label_event(id3_data, "task1",        "15:44:00", "15:53:00", recording_date)
+id3_data <- label_event(id3_data, "intervention", "15:57:00", "16:09:00", recording_date)
+id3_data <- label_event(id3_data, "task2",        "16:12:00", "16:20:00", recording_date)
+print(table(id3_data$event, useNA = "always"))
+
+```
+
+```{r}
+# ===== ID25 (VR Group) =====
+id25_data <- load_participant(vr_path, "ID25")
+recording_date <- format(min(id25_data$datetime_local), "%Y-%m-%d")
+
+id25_data <- label_event(id25_data, "baseline",     "17:21:45", "17:23:55", recording_date)
+id25_data <- label_event(id25_data, "task1",        "17:29:55", "17:38:40", recording_date)
+id25_data <- label_event(id25_data, "intervention", "17:42:39", "17:54:27", recording_date)
+id25_data <- label_event(id25_data, "task2",        "17:56:00", "18:05:35", recording_date)
+
+print(table(id25_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID26 (VR Group) =====
+id26_data <- load_participant(vr_path, "ID26")
+recording_date <- format(min(id26_data$datetime_local), "%Y-%m-%d")
+
+id26_data <- label_event(id26_data, "baseline",     "12:42:15", "12:44:21", recording_date)
+id26_data <- label_event(id26_data, "task1",        "12:57:34", "13:07:57", recording_date)
+id26_data <- label_event(id26_data, "intervention", "13:15:10", "13:27:11", recording_date)
+id26_data <- label_event(id26_data, "task2",        "13:30:27", "13:39:45", recording_date)
+
+print(table(id26_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID36 (VR Group) =====
+id36_data <- load_participant(vr_path, "ID36")
+recording_date <- format(min(id36_data$datetime_local), "%Y-%m-%d")
+
+id36_data <- label_event(id36_data, "baseline",     "11:44:46", "11:46:53", recording_date)
+id36_data <- label_event(id36_data, "task1",        "11:56:17", "12:06:39", recording_date)
+id36_data <- label_event(id36_data, "intervention", "12:12:24", "12:23:58", recording_date)
+id36_data <- label_event(id36_data, "task2",        "12:27:08", "12:36:36", recording_date)
+
+print(table(id36_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID39 (VR Group) =====
+id39_data <- load_participant(vr_path, "ID39")
+recording_date <- format(min(id39_data$datetime_local), "%Y-%m-%d")
+
+id39_data <- label_event(id39_data, "baseline",     "10:19:49", "10:22:00", recording_date)
+id39_data <- label_event(id39_data, "task1",        "10:27:55", "10:36:00", recording_date)
+id39_data <- label_event(id39_data, "intervention", "10:43:39", "10:55:55", recording_date)
+id39_data <- label_event(id39_data, "task2",        "10:58:09",  NULL,      recording_date)
+
+print(table(id39_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID42 (VR Group) =====
+id42_data <- load_participant(vr_path, "ID42")
+recording_date <- format(min(id42_data$datetime_local), "%Y-%m-%d")
+
+id42_data <- label_event(id42_data, "baseline",     "15:19:23", "15:21:31", recording_date)
+id42_data <- label_event(id42_data, "task1",        "15:26:00", "15:37:42", recording_date)
+id42_data <- label_event(id42_data, "intervention", "15:43:09", "15:55:53", recording_date)
+id42_data <- label_event(id42_data, "task2",        "15:59:00", "16:07:53", recording_date)
+
+print(table(id42_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID28 (VR Group) =====
+id28_data <- load_participant(vr_path, "ID28")
+recording_date <- format(min(id28_data$datetime_local), "%Y-%m-%d")
+
+id28_data <- label_event(id28_data, "baseline",     "10:10:46", "10:12:50", recording_date)
+id28_data <- label_event(id28_data, "task1",        "10:19:15", "10:29:43", recording_date)
+id28_data <- label_event(id28_data, "intervention", "10:33:31", "10:45:22", recording_date)
+id28_data <- label_event(id28_data, "task2",        "10:48:32", "10:56:56", recording_date)
+
+print(table(id28_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID43 (VR Group) =====
+id43_data <- load_participant(vr_path, "ID43")
+recording_date <- format(min(id43_data$datetime_local), "%Y-%m-%d")
+
+id43_data <- label_event(id43_data, "baseline",     "11:42:03", "11:44:12", recording_date)
+id43_data <- label_event(id43_data, "task1",        "11:52:32", "12:03:24", recording_date)
+id43_data <- label_event(id43_data, "intervention", "12:07:43", "12:19:33", recording_date)
+id43_data <- label_event(id43_data, "task2",        "12:22:45", "12:32:29", recording_date)
+
+print(table(id43_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID20 (2D Group) =====
+id20_data <- load_participant(group_2d_path, "ID20")
+recording_date <- format(min(id20_data$datetime_local), "%Y-%m-%d")
+
+id20_data <- label_event(id20_data, "baseline",     "15:44:49", "15:46:52", recording_date)
+id20_data <- label_event(id20_data, "task1",        "15:53:55", "16:04:34", recording_date)
+id20_data <- label_event(id20_data, "intervention", "16:09:41", "16:20:17", recording_date)
+id20_data <- label_event(id20_data, "task2",        "16:22:34", "16:31:53", recording_date)
+
+print(table(id20_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID17 (2D Group) =====
+id17_data <- load_participant(group_2d_path, "ID17")
+recording_date <- format(min(id17_data$datetime_local), "%Y-%m-%d")
+
+id17_data <- label_event(id17_data, "baseline",     "16:08:21", "16:10:27", recording_date)
+id17_data <- label_event(id17_data, "task1",        "16:12:00", "16:22:00", recording_date)
+id17_data <- label_event(id17_data, "intervention", "16:27:14", "16:38:59", recording_date)
+id17_data <- label_event(id17_data, "task2",        "16:42:06", "16:51:29", recording_date)
+
+print(table(id17_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID7 (2D Group) =====
+id7_data <- load_participant(group_2d_path, "ID7")
+recording_date <- format(min(id7_data$datetime_local), "%Y-%m-%d")
+
+id7_data <- label_event(id7_data, "baseline",     "14:47:00", "14:50:00", recording_date)
+id7_data <- label_event(id7_data, "task1",        "14:53:00", "15:04:00", recording_date)
+id7_data <- label_event(id7_data, "intervention", "15:08:00", "15:20:00", recording_date)
+id7_data <- label_event(id7_data, "task2",        "15:26:00", "15:35:00", recording_date)
+
+print(table(id7_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID11 (2D Group) =====
+id11_data <- load_participant(group_2d_path, "ID11")
+recording_date <- format(min(id11_data$datetime_local), "%Y-%m-%d")
+
+id11_data <- label_event(id11_data, "baseline",     "11:50:00", "11:52:34", recording_date)
+id11_data <- label_event(id11_data, "task1",        "11:58:00", "12:08:00", recording_date)
+id11_data <- label_event(id11_data, "intervention", "12:13:00", "12:25:00", recording_date)
+id11_data <- label_event(id11_data, "task2",        "12:28:00", "12:38:00", recording_date)
+
+print(table(id11_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID13 (2D Group) =====
+id13_data <- load_participant(group_2d_path, "ID13")
+recording_date <- format(min(id13_data$datetime_local), "%Y-%m-%d")
+
+id13_data <- label_event(id13_data, "baseline",     "15:58:18", "16:00:22", recording_date)
+id13_data <- label_event(id13_data, "task1",        "16:04:24", "16:14:18", recording_date)
+id13_data <- label_event(id13_data, "intervention", "16:18:10", "16:19:53", recording_date)
+id13_data <- label_event(id13_data, "task2",        "16:22:00", "16:31:00", recording_date)
+
+print(table(id13_data$event, useNA = "always"))
+```
+```{r}
+id13_data %>%
+  filter(!is.na(event)) %>%
+  group_by(event) %>%
+  summarise(
+    start   = format(min(datetime_local), "%H:%M:%S"),
+    end     = format(max(datetime_local), "%H:%M:%S"),
+    dur_min = round(as.numeric(difftime(max(datetime_local),
+                                         min(datetime_local), units = "mins")), 2)
+  )
+```
+intervention was 1.72 so ID will be exchanged with ID52 
+
+```{r}
+# ── ID52 (2D) ─────────────────────────────────────────────────────────────────
+id52_data <- load_participant(group_2d_path, "ID52")
+recording_date <- format(min(id52_data$datetime_local), "%Y-%m-%d")
+id52_data$event <- NA
+
+id52_data <- label_event(id52_data, "baseline",     "13:39:00", "13:41:23", recording_date)
+id52_data <- label_event(id52_data, "task1",        "13:47:00", "13:57:00", recording_date)
+id52_data <- label_event(id52_data, "intervention", "14:01:00", "14:14:00", recording_date)
+id52_data <- label_event(id52_data, "task2",        "14:17:00", "14:27:00", recording_date)
+
+print(table(id52_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID29 (2D Group) =====
+id29_data <- load_participant(group_2d_path, "ID29")
+recording_date <- format(min(id29_data$datetime_local), "%Y-%m-%d")
+
+id29_data <- label_event(id29_data, "baseline",     "10:09:59", "10:12:10", recording_date)
+id29_data <- label_event(id29_data, "task1",        "10:15:21", "10:25:09", recording_date)
+id29_data <- label_event(id29_data, "intervention", "10:29:14", "10:40:53", recording_date)
+id29_data <- label_event(id29_data, "task2",        "10:42:26", "10:50:56", recording_date)
+
+print(table(id29_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID32 (2D Group) =====
+id32_data <- load_participant(group_2d_path, "ID32")
+recording_date <- format(min(id32_data$datetime_local), "%Y-%m-%d")
+
+id32_data <- label_event(id32_data, "baseline",     "13:45:51", "13:47:57", recording_date)
+id32_data <- label_event(id32_data, "task1",        "13:54:16", "14:03:44", recording_date)
+id32_data <- label_event(id32_data, "intervention", "14:11:25", "14:23:39", recording_date)
+id32_data <- label_event(id32_data, "task2",        "14:25:21", "14:34:18", recording_date)
+
+print(table(id32_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID34 (2D Group) =====
+id34_data <- load_participant(group_2d_path, "ID34")
+recording_date <- format(min(id34_data$datetime_local), "%Y-%m-%d")
+
+id34_data <- label_event(id34_data, "baseline",     "13:32:15", "13:34:28", recording_date)
+id34_data <- label_event(id34_data, "task1",        "13:41:05", "13:53:09", recording_date)
+id34_data <- label_event(id34_data, "intervention", "13:56:40", "14:08:29", recording_date)
+id34_data <- label_event(id34_data, "task2",        "14:11:42", "14:22:20", recording_date)
+
+print(table(id34_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID27 (2D Group) =====
+
+id27_data <- load_participant(group_2d_path, "ID27")
+recording_date <- format(min(id27_data$datetime_local), "%Y-%m-%d")
+
+id27_data <- label_event(id27_data, "baseline",     "10:28:39", "10:30:48", recording_date)
+id27_data <- label_event(id27_data, "task1",        "10:34:22", "10:43:14", recording_date)
+id27_data <- label_event(id27_data, "intervention", "10:45:23", "10:57:15", recording_date)
+id27_data <- label_event(id27_data, "task2",        "10:57:15", "11:09:07", recording_date)
+
+print(table(id27_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID22 (2D Group) =====
+id22_data <- load_participant(group_2d_path, "ID22")
+recording_date <- format(min(id22_data$datetime_local), "%Y-%m-%d")
+
+id22_data <- label_event(id22_data, "baseline",     "10:11:47", "10:13:54", recording_date)
+id22_data <- label_event(id22_data, "task1",        "10:18:00", "10:27:00", recording_date)
+id22_data <- label_event(id22_data, "intervention", "10:31:25", "10:41:45", recording_date)
+id22_data <- label_event(id22_data, "task2",        "10:43:18", "10:51:49", recording_date)
+
+print(table(id22_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID38 (2D Group) =====
+# Note: recording 2 stopped immediately - loading recordings 1 and 3 only
+id38_files <- list.files(file.path(group_2d_path, "ID38"), pattern = "\\.csv$", full.names = TRUE)
+cat("Files found:", length(id38_files), "\n")
+id38_list <- list()
+for(i in c(1, 3)) {
+  temp <- read.delim(id38_files[i], skip = 2, header = TRUE, sep = "\t")
+  temp <- temp[-1, ]
+  temp[] <- lapply(temp, function(x) if(is.character(x)) as.numeric(x) else x)
+  temp$datetime_local <- as.POSIXct(temp$ms / 1000, origin = "1970-01-01", tz = "UTC")
+  attributes(temp$datetime_local)$tzone <- "Europe/Rome"
+  if(all(c("ms", "datetime_local", "BPM.2", "ms.3", "mV.2") %in% names(temp))) {
+    temp <- temp[, c("ms", "datetime_local", "BPM.2", "ms.3", "mV.2")]
+    names(temp)[names(temp) == "ms.3"] <- "IBI_ms"
+    names(temp)[names(temp) == "mV.2"] <- "ECG_mV"
+  }
+  id38_list[[length(id38_list) + 1]] <- temp
+  cat("Recording", i, ":", nrow(temp), "rows,",
+      format(min(temp$datetime_local), "%H:%M:%S"), "to",
+      format(max(temp$datetime_local), "%H:%M:%S"), "\n")
+}
+id38_data <- do.call(rbind, id38_list)
+cat("\nMerged data:", nrow(id38_data), "rows\n")
+recording_date <- format(min(id38_data$datetime_local), "%Y-%m-%d")
+id38_data$event <- NA
+id38_data <- label_event(id38_data, "baseline",     "14:11:12", "14:13:31", recording_date)
+id38_data <- label_event(id38_data, "task1",        "14:25:05", "14:35:59", recording_date)
+id38_data <- label_event(id38_data, "intervention", "14:45:35", "14:55:18", recording_date)
+id38_data <- label_event(id38_data, "task2",        "14:58:55", "15:07:38", recording_date)
+print(table(id38_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID40 (2D Group) =====
+id40_data <- load_participant(group_2d_path, "ID40")
+recording_date <- format(min(id40_data$datetime_local), "%Y-%m-%d")
+
+id40_data <- label_event(id40_data, "baseline",     "11:38:16", "11:40:26", recording_date)
+id40_data <- label_event(id40_data, "task1",        "11:46:11", "11:55:35", recording_date)
+id40_data <- label_event(id40_data, "intervention", "11:59:35", "12:11:21", recording_date)
+id40_data <- label_event(id40_data, "task2",        "12:14:00", "12:22:46", recording_date)
+
+print(table(id40_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID16 (2D Group) =====
+
+id16_data <- load_participant(group_2d_path, "ID16")
+recording_date <- format(min(id16_data$datetime_local), "%Y-%m-%d")
+id16_data$event <- NA
+
+id16_data <- label_event(id16_data, "baseline",     "14:57:18", "14:59:18", recording_date)
+id16_data <- label_event(id16_data, "task1",        "15:03:53", "15:13:52", recording_date)
+id16_data <- label_event(id16_data, "intervention", "15:18:55", "15:30:49", recording_date)
+id16_data <- label_event(id16_data, "task2",        "15:33:49", "15:39:27", recording_date)
+
+print(table(id16_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID10 (2D Group) =====
+id10_data <- load_participant(group_2d_path, "ID10")
+recording_date <- format(min(id10_data$datetime_local), "%Y-%m-%d")
+
+id10_data <- label_event(id10_data, "baseline",     "10:09:12", "10:11:12", recording_date)
+id10_data <- label_event(id10_data, "task1",        "10:14:57", "10:28:33", recording_date)
+id10_data <- label_event(id10_data, "intervention", "10:28:37", "10:40:25", recording_date)
+id10_data <- label_event(id10_data, "task2",        "10:42:00", "10:52:00", recording_date)
+
+print(table(id10_data$event, useNA = "always"))
+```
+this ID was exchange from ID8, that missed the last 23 minutes of the experiment
+```{r}
+# ===== ID49 (2D Group) =====
+id49_data <- load_participant(group_2d_path, "ID49")
+recording_date <- format(min(id49_data$datetime_local), "%Y-%m-%d")
+
+id49_data <- label_event(id49_data, "baseline",     "10:20:32", "10:22:38", recording_date)
+id49_data <- label_event(id49_data, "task1",        "10:29:00", "10:38:21", recording_date)
+id49_data <- label_event(id49_data, "intervention", "10:44:58", "10:56:26", recording_date)
+id49_data <- label_event(id49_data, "task2",        "10:59:29", "11:08:41", recording_date)
+
+print(table(id49_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID45 (Control Group) =====
+id45_data <- load_participant(control_path, "ID45")
+recording_date <- format(min(id45_data$datetime_local), "%Y-%m-%d")
+
+id45_data <- label_event(id45_data, "baseline",     "10:24:04", "10:26:12", recording_date)
+id45_data <- label_event(id45_data, "task1",        "10:30:30", "10:40:24", recording_date)
+id45_data <- label_event(id45_data, "intervention", "10:45:05", "10:56:33", recording_date)
+id45_data <- label_event(id45_data, "task2",        "11:00:00", "11:09:08", recording_date)
+
+print(table(id45_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID50 (Control Group) =====
+id50_data <- load_participant(control_path, "ID50")
+recording_date <- format(min(id50_data$datetime_local), "%Y-%m-%d")
+
+id50_data <- label_event(id50_data, "baseline",     "11:44:35", "11:46:40", recording_date)
+id50_data <- label_event(id50_data, "task1",        "11:56:00", "12:05:40", recording_date)
+id50_data <- label_event(id50_data, "intervention", "12:10:22", "12:21:00", recording_date)
+id50_data <- label_event(id50_data, "task2",        "12:24:00", "12:34:41", recording_date)
+
+print(table(id50_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID51 (Control Group) =====
+id51_data <- load_participant(control_path, "ID51")
+recording_date <- format(min(id51_data$datetime_local), "%Y-%m-%d")
+
+id51_data <- label_event(id51_data, "baseline",     "11:43:30", "11:45:37", recording_date)
+id51_data <- label_event(id51_data, "task1",        "11:50:48", "12:01:36", recording_date)
+id51_data <- label_event(id51_data, "intervention", "12:05:54", "12:17:34", recording_date)
+id51_data <- label_event(id51_data, "task2",        "12:19:14", "12:29:06", recording_date)
+
+print(table(id51_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID54 (Control Group) =====
+id54_data <- load_participant(control_path, "ID54")
+recording_date <- format(min(id54_data$datetime_local), "%Y-%m-%d")
+
+id54_data <- label_event(id54_data, "baseline",     "11:04:47", "11:06:54", recording_date)
+id54_data <- label_event(id54_data, "task1",        "11:09:42", "11:21:24", recording_date)
+id54_data <- label_event(id54_data, "intervention", "11:22:10", "11:34:01", recording_date)
+id54_data <- label_event(id54_data, "task2",        "11:36:00", "11:46:22", recording_date)
+
+print(table(id54_data$event, useNA = "always"))
+```
+```{r}
+# ===== ID9 (Control Group) =====
+id9_data <- load_participant(control_path, "ID9")
+recording_date <- format(min(id9_data$datetime_local), "%Y-%m-%d")
+
+id9_data <- label_event(id9_data, "baseline",     "15:40:00", "15:42:00", recording_date)
+id9_data <- label_event(id9_data, "task1",        "15:46:00", "15:56:00", recording_date)
+id9_data <- label_event(id9_data, "intervention", "16:00:00", "16:12:00", recording_date)
+id9_data <- label_event(id9_data, "task2",        "16:14:00", "16:23:00", recording_date)
+
+print(table(id9_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID2 (Control Group) =====
+id2_data <- load_participant(control_path, "ID2")
+recording_date <- format(min(id2_data$datetime_local), "%Y-%m-%d")
+
+id2_data <- label_event(id2_data, "baseline",     "14:09:00", "14:12:00", recording_date)
+id2_data <- label_event(id2_data, "task1",        "14:16:00", "14:26:00", recording_date)
+id2_data <- label_event(id2_data, "intervention", "14:29:00", "14:41:00", recording_date)
+id2_data <- label_event(id2_data, "task2",        "14:43:00", "14:52:00", recording_date)
+
+print(table(id2_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID6 (Control Group) =====
+id6_data <- load_participant(control_path, "ID6")
+recording_date <- format(min(id6_data$datetime_local), "%Y-%m-%d")
+
+id6_data <- label_event(id6_data, "baseline",     "13:16:00", "13:19:00", recording_date)
+id6_data <- label_event(id6_data, "task1",        "13:24:00", "13:35:00", recording_date)
+id6_data <- label_event(id6_data, "intervention", "13:40:00", "13:52:00", recording_date)
+id6_data <- label_event(id6_data, "task2",        "13:55:00", "14:01:00", recording_date)
+id6_data <- label_event(id6_data, "task2",        "14:04:00", "14:08:00", recording_date)
+
+print(table(id6_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID15 (Control Group) =====
+id15_data <- load_participant(control_path, "ID15")
+recording_date <- format(min(id15_data$datetime_local), "%Y-%m-%d")
+
+id15_data <- label_event(id15_data, "baseline",     "11:21:00", "11:23:00", recording_date)
+id15_data <- label_event(id15_data, "task1",        "11:27:00", "11:35:00", recording_date)
+id15_data <- label_event(id15_data, "intervention", "11:54:00", "12:06:00", recording_date)
+id15_data <- label_event(id15_data, "task2",        "12:10:00", "12:19:00", recording_date)
+
+print(table(id15_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID18 (Control Group) =====
+id18_data <- load_participant(control_path, "ID18")
+recording_date <- format(min(id18_data$datetime_local), "%Y-%m-%d")
+
+id18_data <- label_event(id18_data, "baseline",     "10:14:32", "10:16:58", recording_date)
+id18_data <- label_event(id18_data, "task1",        "10:22:34", "10:32:23", recording_date)
+id18_data <- label_event(id18_data, "intervention", "10:37:29", "10:47:57", recording_date)
+id18_data <- label_event(id18_data, "task2",        "10:49:48", "10:58:38", recording_date)
+
+print(table(id18_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID21 (Control Group) =====
+id21_data <- load_participant(control_path, "ID21")
+recording_date <- format(min(id21_data$datetime_local), "%Y-%m-%d")
+
+id21_data <- label_event(id21_data, "baseline",     "16:55:37", "16:57:45", recording_date)
+id21_data <- label_event(id21_data, "task1",        "16:59:32", "17:08:38", recording_date)
+id21_data <- label_event(id21_data, "intervention", "17:15:23", "17:27:02", recording_date)
+id21_data <- label_event(id21_data, "task2",        "17:28:22", "17:36:14", recording_date)
+
+print(table(id21_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID30 (Control Group) =====
+id30_data <- load_participant(control_path, "ID30")
+recording_date <- format(min(id30_data$datetime_local), "%Y-%m-%d")
+
+id30_data <- label_event(id30_data, "baseline",     "11:35:55", "11:38:03", recording_date)
+id30_data <- label_event(id30_data, "task1",        "11:44:05", "11:53:18", recording_date)
+id30_data <- label_event(id30_data, "intervention", "11:56:14", "12:08:18", recording_date)
+id30_data <- label_event(id30_data, "task2",        "12:10:43", "12:19:04", recording_date)
+
+print(table(id30_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID31 (Control Group) =====
+id31_data <- load_participant(control_path, "ID31")
+recording_date <- format(min(id31_data$datetime_local), "%Y-%m-%d")
+
+id31_data <- label_event(id31_data, "baseline",     "15:14:50", "15:16:59", recording_date)
+id31_data <- label_event(id31_data, "task1",        "15:28:08", "15:38:40", recording_date)
+id31_data <- label_event(id31_data, "intervention", "15:42:37", "15:54:29", recording_date)
+id31_data <- label_event(id31_data, "task2",        "15:59:59", "16:09:53", recording_date)
+
+print(table(id31_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID33 (Control Group) =====
+id33_data <- load_participant(control_path, "ID33")
+recording_date <- format(min(id33_data$datetime_local), "%Y-%m-%d")
+
+id33_data <- label_event(id33_data, "baseline",     "11:37:06", "11:39:10", recording_date)
+id33_data <- label_event(id33_data, "task1",        "11:46:43", "11:55:58", recording_date)
+id33_data <- label_event(id33_data, "intervention", "11:59:32", "12:11:18", recording_date)
+id33_data <- label_event(id33_data, "task2",        "12:13:20", "12:22:52", recording_date)
+
+print(table(id33_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID37 (Control Group) =====
+id37_data <- load_participant(control_path, "ID37")
+recording_date <- format(min(id37_data$datetime_local), "%Y-%m-%d")
+
+id37_data <- label_event(id37_data, "baseline",     "11:16:09", "11:18:19", recording_date)
+id37_data <- label_event(id37_data, "task1",        "11:25:43", "11:36:11", recording_date)
+id37_data <- label_event(id37_data, "intervention", "11:40:25", "11:52:22", recording_date)
+id37_data <- label_event(id37_data, "task2",        "11:55:46", "12:05:05", recording_date)
+
+print(table(id37_data$event, useNA = "always"))
+```
+
+```{r}
+# ===== ID41 (Control Group) =====
+id41_data <- load_participant(control_path, "ID41")
+recording_date <- format(min(id41_data$datetime_local), "%Y-%m-%d")
+
+id41_data <- label_event(id41_data, "baseline",     "14:11:16", "14:13:18", recording_date)
+id41_data <- label_event(id41_data, "task1",        "14:19:03", "14:29:00", recording_date)
+id41_data <- label_event(id41_data, "intervention", "14:33:07", "14:45:21", recording_date)
+id41_data <- label_event(id41_data, "task2",        "14:46:26", "14:55:40", recording_date)
+
+print(table(id41_data$event, useNA = "always"))
+```
+
+
+```{r}
+# ============================================================================
+# RAW ECG WAVEFORM VISUALIZATION
+# ============================================================================
+# Generates one page per participant showing ECG waveforms across all
+# four labeled events: baseline, task1, intervention, task2.
+#
+# Layout  : 4 panels per page (2x2 grid)
+# Y-axis  : ECG_mV (LL-RA Lead II)
+# X-axis  : real clock time (HH:MM:SS)
+# Output  : ecg_waveforms.pdf — one page per participant (45 pages)
+# ============================================================================
+
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# ── participant lookup ────────────────────────────────────────────────────────
+vr_ids       <- c("ID3","ID14","ID19","ID24","ID25","ID26","ID28",
+                  "ID36","ID39","ID42","ID43","ID44","ID48","ID53","ID55")
+group_2d_ids <- c("ID7","ID10","ID11","ID52","ID16","ID17","ID20",
+                  "ID22","ID27","ID29","ID32","ID34","ID38","ID40","ID49")
+control_ids  <- c("ID2","ID6","ID9","ID15","ID18","ID21","ID30",
+                  "ID31","ID33","ID37","ID41","ID45","ID50","ID51","ID54")
+
+group_lookup <- data.frame(
+  id    = c(vr_ids, group_2d_ids, control_ids),
+  group = c(rep("VR",      length(vr_ids)),
+            rep("2D",      length(group_2d_ids)),
+            rep("Control", length(control_ids))),
+  stringsAsFactors = FALSE
+)
+
+phases       <- c("baseline", "task1", "intervention", "task2")
+phase_labels <- c("Baseline", "Task 1", "Intervention", "Task 2")
+
+phase_colors <- c(
+  baseline     = "#2196F3",
+  task1        = "#FF9800",
+  intervention = "#4CAF50",
+  task2        = "#E91E63"
+)
+
+# ── helper: build one ECG panel for one phase ─────────────────────────────────
+ecg_panel <- function(df_phase, phase, pid, grp) {
+
+  if (nrow(df_phase) == 0 || all(is.na(df_phase$ECG_mV))) {
+    return(
+      ggplot() +
+        annotate("text", x = 0.5, y = 0.5,
+                 label = paste("No ECG data for", phase),
+                 color = "grey50", size = 4) +
+        theme_void() +
+        labs(title = phase_labels[match(phase, phases)])
+    )
+  }
+
+  # Downsample for plotting speed — keep every 4th row (512Hz → ~128Hz)
+  df_plot <- df_phase[seq(1, nrow(df_phase), by = 4), ]
+
+  # Clip extreme artifacts for display
+  y_center <- median(df_plot$ECG_mV, na.rm = TRUE)
+  y_range  <- 3 * mad(df_plot$ECG_mV, na.rm = TRUE)
+  y_min    <- y_center - max(y_range, 0.5)
+  y_max    <- y_center + max(y_range, 0.5)
+
+  dur_min <- round(as.numeric(difftime(
+    max(df_phase$datetime_local),
+    min(df_phase$datetime_local), units = "mins")), 2)
+
+  ggplot(df_plot, aes(x = datetime_local, y = ECG_mV)) +
+    geom_line(color = phase_colors[phase], linewidth = 0.2, alpha = 0.8) +
+    scale_x_datetime(date_labels = "%H:%M:%S",
+                     date_breaks = "2 min") +
+    scale_y_continuous(limits = c(y_min, y_max)) +
+    labs(
+      title    = phase_labels[match(phase, phases)],
+      subtitle = sprintf("%.2f min  |  %s → %s",
+                         dur_min,
+                         format(min(df_phase$datetime_local), "%H:%M:%S"),
+                         format(max(df_phase$datetime_local), "%H:%M:%S")),
+      x = NULL,
+      y = "ECG (mV)"
+    ) +
+    theme_minimal(base_size = 9) +
+    theme(
+      plot.title       = element_text(face = "bold", size = 10,
+                                      color = phase_colors[phase]),
+      plot.subtitle    = element_text(size = 7, color = "grey50"),
+      axis.text.x      = element_text(angle = 45, hjust = 1, size = 7),
+      axis.text.y      = element_text(size = 7),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "grey90"),
+      plot.background  = element_rect(fill = "white", color = "grey85")
+    )
+}
+
+# ============================================================================
+# MAIN LOOP — generate one page per participant
+# ============================================================================
+pdf("ecg_waveforms.pdf", width = 16, height = 10)
+
+for (i in 1:nrow(group_lookup)) {
+
+  pid <- group_lookup$id[i]
+  grp <- group_lookup$group[i]
+  obj <- paste0(tolower(pid), "_data")
+
+  if (!exists(obj)) next
+  df <- get(obj)
+  if (!"ECG_mV" %in% names(df)) next
+
+  panels <- lapply(phases, function(ph) {
+    df_ph <- df %>%
+      filter(event == ph) %>%
+      arrange(datetime_local)
+    ecg_panel(df_ph, ph, pid, grp)
+  })
+
+  title_grob <- grid::textGrob(
+    label = paste0(pid, "  —  Raw ECG Waveform  (", grp, " Group)"),
+    gp    = grid::gpar(fontsize = 14, fontface = "bold")
+  )
+
+  gridExtra::grid.arrange(
+    panels[[1]], panels[[2]],
+    panels[[3]], panels[[4]],
+    ncol = 2, nrow = 2,
+    top  = title_grob
+  )
+}
+
+dev.off()
+cat("✅ Saved: ecg_waveforms.pdf\n")
+```
+
+```{r}
+# ============================================================================
+# IBI GAP DETECTION — BASELINE + INTERVENTION ONLY 
+# ============================================================================
+# Audits the integrity of the raw IBI time series for all participants.
+# Identifies gaps > 5 seconds between consecutive clean beats within
+# baseline and intervention windows.
+#
+# Literature basis:
+#   - Physiological bounds: Sleimen-Malkoun et al. (2023) — 400–1500ms
+#   - Gap reporting threshold: Quigley et al. (2024) — gaps > 5s must
+#     be reported and documented in published HRV studies
+#   - Duplicate removal: Sleimen-Malkoun et al. (2023)
+#
+# Output:
+#   gap_detection_report.csv
+# ============================================================================
+
+library(dplyr)
+
+vr_ids       <- c("ID3","ID14","ID19","ID24","ID25","ID26","ID28",
+                  "ID36","ID39","ID42","ID43","ID44","ID48","ID53","ID55")
+group_2d_ids <- c("ID7","ID10","ID11","ID52","ID16","ID17","ID20",
+                  "ID22","ID27","ID29","ID32","ID34","ID38","ID40","ID49")
+control_ids  <- c("ID2","ID6","ID9","ID15","ID18","ID21","ID30",
+                  "ID31","ID33","ID37","ID41","ID45","ID50","ID51","ID54")
+
+group_lookup <- data.frame(
+  id    = c(vr_ids, group_2d_ids, control_ids),
+  group = c(rep("VR",      length(vr_ids)),
+            rep("2D",      length(group_2d_ids)),
+            rep("Control", length(control_ids))),
+  stringsAsFactors = FALSE
+)
+
+phases            <- c("baseline", "intervention")
+GAP_THRESHOLD_SEC <- 5
+results           <- list()
+
+# ── main loop — silent, results collected into list ───────────────────────────
+for (i in 1:nrow(group_lookup)) {
+
+  pid <- group_lookup$id[i]
+  grp <- group_lookup$group[i]
+  obj <- paste0(tolower(pid), "_data")
+
+  if (!exists(obj)) next
+
+  df      <- get(obj)
+  has_ibi <- "IBI_ms" %in% names(df) && any(!is.na(df$IBI_ms))
+
+  for (ph in phases) {
+
+    df_ph <- df %>% filter(event == ph) %>% arrange(datetime_local)
+    if (nrow(df_ph) == 0) next
+
+    if (has_ibi) {
+      beats <- df_ph %>%
+        filter(!is.na(IBI_ms), IBI_ms > 0) %>%
+        filter(IBI_ms != lag(IBI_ms, default = -1)) %>%
+        filter(IBI_ms >= 400, IBI_ms <= 1500)
+    } else {
+      beats <- df_ph %>%
+        filter(!is.na(BPM.2), BPM.2 > 0) %>%
+        filter(BPM.2 >= 40, BPM.2 <= 200)
+    }
+
+    if (nrow(beats) < 2) next
+
+    beats <- beats %>%
+      mutate(gap_sec = as.numeric(difftime(datetime_local,
+                                            lag(datetime_local),
+                                            units = "secs")))
+
+    max_gap       <- max(beats$gap_sec, na.rm = TRUE)
+    n_gaps        <- sum(beats$gap_sec > GAP_THRESHOLD_SEC, na.rm = TRUE)
+    n_gaps_over10 <- sum(beats$gap_sec > 10, na.rm = TRUE)
+    dur_min       <- round(as.numeric(difftime(max(beats$datetime_local),
+                                                min(beats$datetime_local),
+                                                units = "mins")), 2)
+
+    results[[paste(pid, ph)]] <- data.frame(
+      id             = pid,
+      group          = grp,
+      phase          = ph,
+      dur_min        = dur_min,
+      n_beats        = nrow(beats),
+      max_gap_sec    = round(max_gap, 1),
+      n_gaps_over5s  = n_gaps,
+      n_gaps_over10s = n_gaps_over10,
+      flagged_5s     = n_gaps > 0,
+      flagged_10s    = n_gaps_over10 > 0,
+      stringsAsFactors = FALSE
+    )
+  }
+}
+
+# ── combine results ───────────────────────────────────────────────────────────
+gap_df <- do.call(rbind, results)
+rownames(gap_df) <- NULL
+
+# ── output — reportable gaps only ────────────────────────────────────────────
+cat("FLAGGED PARTICIPANTS — REPORTABLE GAPS (> 5s, Quigley et al., 2024)\n")
+cat("====================================================================\n")
+flagged_5s <- gap_df %>% filter(flagged_5s == TRUE)
+if (nrow(flagged_5s) == 0) {
+  cat("✅ No gaps > 5s detected.\n")
+} else {
+  print(flagged_5s)
+}
+
+cat("\nFLAGGED PARTICIPANTS — EPOCH RISK GAPS (> 10s, motivated threshold)\n")
+cat("====================================================================\n")
+flagged_10s <- gap_df %>% filter(flagged_10s == TRUE)
+if (nrow(flagged_10s) == 0) {
+  cat("✅ No gaps > 10s detected.\n")
+} else {
+  print(flagged_10s)
+}
+
+write.csv(gap_df, "gap_detection_report.csv", row.names = FALSE)
+cat("\n✅ Saved: gap_detection_report.csv\n")
+```
+```{r}
+# ===== ID19 (VR Group) — baseline extended +45s =====
+id19_data <- load_participant(vr_path, "ID19")
+recording_date <- format(min(id19_data$datetime_local), "%Y-%m-%d")
+id19_data <- label_event(id19_data, "baseline",     "11:36:15", "11:39:06", recording_date)
+id19_data <- label_event(id19_data, "task1",        "11:44:48", "11:54:38", recording_date)
+id19_data <- label_event(id19_data, "intervention", "12:04:00", "12:14:00", recording_date)
+id19_data <- label_event(id19_data, "task2",        "12:25:10", "12:34:16", recording_date)
+
+# Quick beat count check for baseline
+baseline_beats_id19 <- id19_data %>%
+  filter(event == "baseline", !is.na(IBI_ms), IBI_ms >= 400, IBI_ms <= 1500) %>%
+  filter(IBI_ms != lag(IBI_ms, default = -1)) %>%
+  nrow()
+cat("ID19 baseline beats after extension:", baseline_beats_id19, "\n")
+
+# ===== ID24 (VR Group) — baseline extended +45s =====
+id24_data <- load_participant(vr_path, "ID24")
+recording_date <- format(min(id24_data$datetime_local), "%Y-%m-%d")
+id24_data <- label_event(id24_data, "baseline",     "16:17:40", "16:21:12", recording_date)
+id24_data <- label_event(id24_data, "task1",        "16:28:22", "16:38:02", recording_date)
+id24_data <- label_event(id24_data, "intervention", "16:44:35", "16:56:04", recording_date)
+id24_data <- label_event(id24_data, "task2",        "16:59:03", "17:07:46", recording_date)
+
+baseline_beats_id24 <- id24_data %>%
+  filter(event == "baseline", !is.na(IBI_ms), IBI_ms >= 400, IBI_ms <= 1500) %>%
+  filter(IBI_ms != lag(IBI_ms, default = -1)) %>%
+  nrow()
+cat("ID24 baseline beats after extension:", baseline_beats_id24, "\n")
+```
+
+```{r}
+# ============================================================================
+# CHUNK 1 — HELPER FUNCTIONS
+# ============================================================================
+# Defines all helper functions used by the HR and RMSSD extraction pipelines.
+#
+# Cleaning rules (Sleimen-Malkoun et al., 2023):
+#   - Physiological bounds: 400–1500ms
+#   - Duplicate removal
+#   - 3SD rule
+#
+# Interpolation (Quigley et al., 2024):
+#   - Cubic spline applied to gaps < 10s only
+#   - Gaps >= 10s left intact — handled by Rule 2 in validate_epoch()
+#   - Interpolated flag tracked for downstream use
+#
+# Contiguity check:
+#   - Descriptive only for HR pipeline
+#   - Hard exclusion criterion for RMSSD pipeline (Quigley et al., 2024)
+# ============================================================================
+
+library(dplyr)
+
+# ── 1A: Expected beat count ───────────────────────────────────────────────────
+expected_beats <- function(duration_min, mean_hr_bpm) {
+  round(duration_min * mean_hr_bpm)
+}
+
+# ── 1B: Coverage check — descriptive only ────────────────────────────────────
+# Reports percentage of expected beats present.
+# Not used as exclusion criterion in either pipeline.
+coverage_check <- function(n_valid, n_expected) {
+  if (n_expected <= 0) return(list(pct = NA_real_, pass = FALSE))
+  pct <- round(100 * n_valid / n_expected, 1)
+  list(pct = pct, pass = pct >= 66.7)
+}
+
+# ── 1C: Gap scanner ───────────────────────────────────────────────────────────
+# Detects gaps between consecutive timestamps.
+# Used by validate_epoch() to apply the gap >= 10s exclusion rule (HR)
+# and for descriptive gap reporting (RMSSD).
+gap_scanner <- function(timestamps) {
+  if (length(timestamps) < 2) {
+    return(list(
+      gap_durations    = numeric(0),
+      max_gap_sec      = 0,
+      n_gaps_over5s    = 0,
+      n_gaps_over10s   = 0,
+      has_gap_over10s  = FALSE,
+      gap_span_indices = integer(0)
+    ))
+  }
+  gaps_sec <- as.numeric(difftime(
+    timestamps[-1], timestamps[-length(timestamps)], units = "secs"
+  ))
+  list(
+    gap_durations    = gaps_sec,
+    max_gap_sec      = max(gaps_sec, na.rm = TRUE),
+    n_gaps_over5s    = sum(gaps_sec > 5,  na.rm = TRUE),
+    n_gaps_over10s   = sum(gaps_sec > 10, na.rm = TRUE),
+    has_gap_over10s  = any(gaps_sec > 10, na.rm = TRUE),
+    gap_span_indices = which(gaps_sec > 5) + 1L
+  )
+}
+
+# ── 1D: Contiguity check ──────────────────────────────────────────────────────
+# Finds the longest uninterrupted segment (no internal gap > 5s).
+# Descriptive only for HR pipeline.
+# Hard exclusion criterion for RMSSD pipeline — Quigley et al. (2024)
+# explicitly states HRV requires an unbroken time series.
+# Passes if longest contiguous window >= 60s.
+contiguity_check <- function(timestamps) {
+  if (length(timestamps) < 2) {
+    return(list(longest_contiguous_sec = 0, pass = FALSE))
+  }
+  gaps_sec <- as.numeric(difftime(
+    timestamps[-1], timestamps[-length(timestamps)], units = "secs"
+  ))
+  breaks        <- which(gaps_sec > 5)
+  seg_starts    <- c(1L, breaks + 1L)
+  seg_ends      <- c(breaks, length(timestamps))
+  seg_durations <- mapply(function(s, e) {
+    as.numeric(difftime(timestamps[e], timestamps[s], units = "secs"))
+  }, seg_starts, seg_ends)
+  longest <- max(seg_durations, na.rm = TRUE)
+  list(
+    longest_contiguous_sec = round(longest, 1),
+    pass                   = longest >= 60
+  )
+}
+
+# ── 1E: IBI cleaner ───────────────────────────────────────────────────────────
+# Three sequential cleaning steps per Sleimen-Malkoun et al. (2023):
+#   Step 1a: Remove NA and zero values
+#   Step 1b: Remove duplicate consecutive IBIs
+#   Step 1c: Remove values outside physiological bounds (400–1500ms)
+#   Step 2:  Remove values outside mean ± 3SD
+#
+# Returns:
+#   $clean_df    — cleaned dataframe
+#   $n_raw       — beat count after bounds, before 3SD
+#   $n_clean     — beat count after 3SD rule
+#   $pct_removed — percentage removed by 3SD step
+clean_ibi_slice <- function(df_slice) {
+  df_bounded <- df_slice %>%
+    filter(!is.na(IBI_ms), IBI_ms > 0) %>%
+    arrange(datetime_local) %>%
+    filter(IBI_ms != lag(IBI_ms, default = -1)) %>%
+    filter(IBI_ms >= 400, IBI_ms <= 1500)
+
+  n_raw <- nrow(df_bounded)
+
+  if (n_raw >= 2) {
+    m        <- mean(df_bounded$IBI_ms, na.rm = TRUE)
+    s        <- sd(df_bounded$IBI_ms,   na.rm = TRUE)
+    df_clean <- df_bounded %>%
+      filter(IBI_ms >= m - 3*s, IBI_ms <= m + 3*s)
+  } else {
+    df_clean <- df_bounded
+  }
+
+  n_clean     <- nrow(df_clean)
+  pct_removed <- if (n_raw > 0) round(100 * (n_raw - n_clean) / n_raw, 1) else 100
+
+  list(
+    clean_df    = df_clean,
+    n_raw       = n_raw,
+    n_clean     = n_clean,
+    pct_removed = pct_removed
+  )
+}
+
+# ── 1E-BPM: BPM cleaner — fallback for ID3 ───────────────────────────────────
+# ID3 was recorded on SD card with different column naming convention.
+# Same cleaning logic as clean_ibi_slice but operates on BPM column.
+clean_bpm_slice <- function(df_slice) {
+  df_bounded <- df_slice %>%
+    filter(!is.na(BPM.2), BPM.2 >= 40, BPM.2 <= 200) %>%
+    arrange(datetime_local)
+
+  n_raw <- nrow(df_bounded)
+
+  if (n_raw >= 2) {
+    m        <- mean(df_bounded$BPM.2, na.rm = TRUE)
+    s        <- sd(df_bounded$BPM.2,   na.rm = TRUE)
+    df_clean <- df_bounded %>%
+      filter(BPM.2 >= m - 3*s, BPM.2 <= m + 3*s)
+  } else {
+    df_clean <- df_bounded
+  }
+
+  n_clean     <- nrow(df_clean)
+  pct_removed <- if (n_raw > 0) round(100 * (n_raw - n_clean) / n_raw, 1) else 100
+
+  list(
+    clean_df    = df_clean,
+    n_raw       = n_raw,
+    n_clean     = n_clean,
+    pct_removed = pct_removed
+  )
+}
+
+# ── 1F: Cubic spline interpolation for gaps < 10 seconds ─────────────────────
+# Restores time series continuity by filling gaps with spline-estimated beats.
+# Only gaps < 10s are interpolated — Quigley et al. (2024).
+# Gaps >= 10s are left intact and handled downstream:
+#   - HR pipeline: gap >= 10s triggers hard exclusion via Rule 2
+#   - RMSSD pipeline: gap >= 10s creates natural break in successive differences
+# Interpolated beats are clamped to physiological bounds (400–1500ms).
+# An 'interpolated' flag column tracks synthetic beats for downstream use.
+interpolate_ibi_spline <- function(df_clean) {
+  if (nrow(df_clean) < 3) return(df_clean)
+
+  df_clean <- df_clean %>% arrange(datetime_local)
+  df_clean$interpolated <- FALSE
+
+  t_sec    <- as.numeric(difftime(df_clean$datetime_local,
+                                   df_clean$datetime_local[1],
+                                   units = "secs"))
+  ibi      <- df_clean$IBI_ms
+  gaps_sec <- diff(t_sec)
+
+  interpolated_rows <- list()
+
+  for (i in seq_along(gaps_sec)) {
+    gap <- gaps_sec[i]
+
+    local_ibi          <- ibi[max(1, i-2):min(length(ibi), i+2)]
+    local_mean_ibi_sec <- mean(local_ibi, na.rm = TRUE) / 1000
+
+    if (local_mean_ibi_sec <= 0) next
+
+    n_missing <- round(gap / local_mean_ibi_sec) - 1
+
+    if (n_missing > 0 && gap < 10) {
+
+      idx_start <- max(1, i - 1)
+      idx_end   <- min(length(t_sec), i + 2)
+      known_t   <- t_sec[idx_start:idx_end]
+      known_ibi <- ibi[idx_start:idx_end]
+
+      if (length(unique(known_t)) >= 3) {
+        new_t <- seq(t_sec[i], t_sec[i + 1],
+                     length.out = n_missing + 2)[-c(1, n_missing + 2)]
+
+        new_ibi <- tryCatch(
+          stats::spline(known_t, known_ibi, xout = new_t)$y,
+          error = function(e) rep(mean(known_ibi, na.rm = TRUE), n_missing)
+        )
+
+        new_ibi <- pmax(400, pmin(1500, round(new_ibi)))
+
+        new_times <- df_clean$datetime_local[1] +
+          as.difftime(new_t, units = "secs")
+
+        new_df <- data.frame(
+          datetime_local = new_times,
+          IBI_ms         = new_ibi,
+          interpolated   = TRUE,
+          stringsAsFactors = FALSE
+        )
+
+        interpolated_rows[[length(interpolated_rows) + 1]] <- new_df
+      }
+    }
+  }
+
+  if (length(interpolated_rows) > 0) {
+    df_interp   <- dplyr::bind_rows(interpolated_rows)
+    shared_cols <- intersect(names(df_clean), names(df_interp))
+    df_interp   <- df_interp[, shared_cols, drop = FALSE]
+    df_out      <- dplyr::bind_rows(df_clean, df_interp) %>%
+                   dplyr::arrange(datetime_local)
+  } else {
+    df_out <- df_clean
+  }
+
+  df_out
+}
+
+cat("✅ Chunk 1 loaded — helper functions ready\n")
+```
+
+
+```{r}
+# ============================================================================
+# CHUNK 2 — EPOCH VALIDATOR FUNCTION (HR PIPELINE ONLY)
+# ============================================================================
+# Applies three sequential exclusion rules to each HR epoch.
+# All checks run on PRE-interpolation timestamps to prevent interpolation
+# from masking the true gap structure of the series.
+#
+# Exclusion rules (applied in order):
+#   Rule 1: Cleaning > 33%             (Sleimen-Malkoun et al., 2023)
+#   Rule 2: Single gap >= 10s          (motivated threshold: 2x Quigley
+#                                       et al. (2024) 5s reporting rule)
+#   Rule 3: Interpolation > 50%        (Benchekroun et al., 2023)
+#
+# Descriptive only (not exclusion criteria):
+#   - Coverage percentage
+#   - Contiguous window length         (retained for transparency)
+# ============================================================================
+
+validate_epoch <- function(cleaned_result,
+                           timestamps_pre,
+                           timestamps_post,
+                           epoch_label, pid,
+                           participant_mean_hr,
+                           pct_interpolated = 0,
+                           max_cleaning     = 33,
+                           max_gap_s        = 10,
+                           max_interp_pct   = 50) {
+
+  # ── guard: empty epoch ──────────────────────────────────────────────────────
+  if (is.null(cleaned_result) || cleaned_result$n_clean == 0) {
+    return(list(
+      valid            = FALSE,
+      reason           = "no data",
+      coverage_pct     = NA_real_,
+      pct_removed      = NA_real_,
+      max_gap_sec      = NA_real_,
+      longest_cont_sec = NA_real_,
+      n_beats          = 0L,
+      n_expected       = NA_integer_,
+      pct_interpolated = NA_real_,
+      mean_hr_bpm      = NA_real_
+    ))
+  }
+
+  n_beats     <- cleaned_result$n_clean
+  pct_removed <- cleaned_result$pct_removed
+
+  # ── epoch duration and expected beats (descriptive) ──────────────────────
+  dur_min    <- as.numeric(difftime(
+    max(timestamps_pre), min(timestamps_pre), units = "mins"
+  ))
+  n_expected <- expected_beats(dur_min, participant_mean_hr)
+
+  # ── all checks run on PRE-interpolation timestamps ────────────────────────
+  cov  <- coverage_check(n_beats, n_expected)
+  gaps <- gap_scanner(timestamps_pre)
+  cont <- contiguity_check(timestamps_pre)
+
+  # ── weighted mean HR ──────────────────────────────────────────────────────
+  ep_hr <- NA_real_
+  if (!is.null(cleaned_result$clean_df)) {
+    if ("IBI_ms" %in% names(cleaned_result$clean_df)) {
+      total_min <- sum(cleaned_result$clean_df$IBI_ms, na.rm = TRUE) / 60000
+      ep_hr     <- if (total_min > 0) round(n_beats / total_min, 2) else NA_real_
+    } else if ("BPM.2" %in% names(cleaned_result$clean_df)) {
+      ep_hr <- round(mean(cleaned_result$clean_df$BPM.2, na.rm = TRUE), 2)
+    }
+  }
+
+  # ── rule evaluation ───────────────────────────────────────────────────────
+  if (pct_removed > max_cleaning) {
+    reason <- sprintf("cleaning removed %.1f%% > 33%%", pct_removed)
+    valid  <- FALSE
+
+  } else if (gaps$has_gap_over10s) {
+    reason <- sprintf("gap >= 10s detected (max gap: %.1fs)", gaps$max_gap_sec)
+    valid  <- FALSE
+
+  } else if (pct_interpolated > max_interp_pct) {
+    reason <- sprintf("interpolation %.1f%% > 50%% (Benchekroun et al., 2023)",
+                      pct_interpolated)
+    valid  <- FALSE
+
+  } else {
+    reason <- "ok"
+    valid  <- TRUE
+  }
+
+  # ── print validation result ───────────────────────────────────────────────
+  status_icon <- if (valid) "✓" else "❌"
+  cat(sprintf(
+    "    [%s] %-14s → %s  beats=%d  exp=%d  cov=%.1f%%  clean_lost=%.1f%%  max_gap=%.1fs  cont=%.1fs  interp=%.1f%%  %s\n",
+    pid, epoch_label, status_icon,
+    n_beats, n_expected,
+    ifelse(is.na(cov$pct), 0, cov$pct),
+    pct_removed,
+    gaps$max_gap_sec,
+    cont$longest_contiguous_sec,
+    pct_interpolated,
+    ifelse(valid, "VALID", paste("INVALID —", reason))
+  ))
+
+  list(
+    valid            = valid,
+    reason           = reason,
+    coverage_pct     = cov$pct,
+    pct_removed      = pct_removed,
+    max_gap_sec      = gaps$max_gap_sec,
+    longest_cont_sec = cont$longest_contiguous_sec,
+    n_beats          = n_beats,
+    n_expected       = n_expected,
+    pct_interpolated = pct_interpolated,
+    mean_hr_bpm      = ep_hr
+  )
+}
+
+cat("✅ Chunk 2 loaded — validate_epoch() ready\n")
+```
+
+```{r}
+# ============================================================================
+# CHUNK 3 — HR EPOCH EXTRACTION
+# ============================================================================
+# Extracts weighted mean HR for baseline and four intervention quarters.
+# Intervention window is divided into equal beat-based quarters.
+#
+# Processing order per epoch:
+#   Step 1: Clean IBI series (physiological bounds, dedup, 3SD)
+#   Step 2: Store pre-interpolation counts and timestamps
+#   Step 3: Apply cubic spline interpolation for gaps < 10s
+#   Step 4: Compute interpolation percentage
+#   Step 5: Validate epoch using PRE-interpolation timestamps
+#   Step 6: Compute weighted mean HR on POST-interpolation series if valid
+#
+# Validation rules (via validate_epoch, Chunk 2):
+#   Rule 1: Cleaning > 33%             (Sleimen-Malkoun et al., 2023)
+#   Rule 2: Single gap >= 10s          (motivated: 2x Quigley 5s rule)
+#   Rule 3: Interpolation > 50%        (Benchekroun et al., 2023)
+#
+# HR formula: HR = N_beats / T_minutes
+#   where T_minutes derived from sum of IBI_ms (Quigley et al., 2024)
+#
+# Output: hr_epochs_validated.csv
+# ============================================================================
+
+library(dplyr)
+
+vr_ids       <- c("ID3","ID14","ID19","ID24","ID25","ID26","ID28",
+                  "ID36","ID39","ID42","ID43","ID44","ID48","ID53","ID55")
+group_2d_ids <- c("ID7","ID10","ID11","ID52","ID16","ID17","ID20",
+                  "ID22","ID27","ID29","ID32","ID34","ID38","ID40","ID49")
+control_ids  <- c("ID2","ID6","ID9","ID15","ID18","ID21","ID30",
+                  "ID31","ID33","ID37","ID41","ID45","ID50","ID51","ID54")
+
+all_ids <- c(vr_ids, group_2d_ids, control_ids)
+
+# ── participant mean HR lookup ────────────────────────────────────────────────
+participant_hr_lookup <- data.frame(
+  id          = character(0),
+  mean_hr_ref = numeric(0),
+  stringsAsFactors = FALSE
+)
+
+for (pid in all_ids) {
+  obj_name <- paste0(tolower(pid), "_data")
+  if (!exists(obj_name)) next
+  df <- get(obj_name)
+
+  has_ibi <- "IBI_ms" %in% names(df) && any(!is.na(df$IBI_ms))
+  df_ph   <- df %>% filter(event %in% c("baseline", "intervention"))
+
+  if (has_ibi) {
+    cleaned  <- clean_ibi_slice(df_ph)
+    ibi_vals <- cleaned$clean_df$IBI_ms
+    n        <- length(ibi_vals)
+    hr_ref   <- if (n > 0) round(n / (sum(ibi_vals) / 60000), 2) else 75
+  } else {
+    cleaned  <- clean_bpm_slice(df_ph)
+    bpm_vals <- cleaned$clean_df$BPM.2
+    hr_ref   <- if (length(bpm_vals) > 0) round(mean(bpm_vals), 2) else 75
+  }
+
+  participant_hr_lookup <- rbind(participant_hr_lookup, data.frame(
+    id = pid, mean_hr_ref = hr_ref, stringsAsFactors = FALSE
+  ))
+}
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+get_participant_hr <- function(pid) {
+  val <- participant_hr_lookup$mean_hr_ref[participant_hr_lookup$id == pid]
+  if (length(val) == 0 || is.na(val)) return(75)
+  val
+}
+
+get_group <- function(id) {
+  if (id %in% vr_ids)       return("VR")
+  if (id %in% group_2d_ids) return("2D")
+  return("Control")
+}
+
+# ── main extraction function ──────────────────────────────────────────────────
+extract_hr_validated <- function(data, pid, group) {
+
+  has_ibi <- "IBI_ms" %in% names(data) && any(!is.na(data$IBI_ms))
+  p_hr    <- get_participant_hr(pid)
+  results <- list()
+
+  # ── Epoch 0: Baseline ───────────────────────────────────────────────────────
+  df_base <- data %>% filter(event == "baseline") %>% arrange(datetime_local)
+
+  if (has_ibi) cleaned_base <- clean_ibi_slice(df_base) else
+               cleaned_base <- clean_bpm_slice(df_base)
+
+  base_n_raw          <- cleaned_base$n_raw
+  base_n_clean        <- cleaned_base$n_clean
+  base_pct_removed    <- if (base_n_raw > 0)
+                           round(100 * (base_n_raw - base_n_clean) / base_n_raw, 1)
+                         else 100
+  timestamps_base_pre <- cleaned_base$clean_df$datetime_local
+
+  if (has_ibi && nrow(cleaned_base$clean_df) >= 3)
+    cleaned_base$clean_df <- interpolate_ibi_spline(cleaned_base$clean_df)
+
+  if ("interpolated" %in% names(cleaned_base$clean_df)) {
+    n_orig_base     <- sum(!cleaned_base$clean_df$interpolated)
+    n_interp_base   <- sum(cleaned_base$clean_df$interpolated)
+    pct_interp_base <- if ((n_orig_base + n_interp_base) > 0)
+                         round(100 * n_interp_base / (n_orig_base + n_interp_base), 1)
+                       else 0
+  } else {
+    pct_interp_base <- 0
+  }
+
+  cleaned_base$n_raw       <- base_n_raw
+  cleaned_base$n_clean     <- base_n_clean
+  cleaned_base$pct_removed <- base_pct_removed
+
+  v_base <- suppressMessages(validate_epoch(
+    cleaned_result      = cleaned_base,
+    timestamps_pre      = timestamps_base_pre,
+    timestamps_post     = cleaned_base$clean_df$datetime_local,
+    epoch_label         = "baseline",
+    pid                 = pid,
+    participant_mean_hr = p_hr,
+    pct_interpolated    = pct_interp_base
+  ))
+
+  if (v_base$valid) {
+    avg_hr <- if (has_ibi)
+      round(v_base$n_beats / (sum(cleaned_base$clean_df$IBI_ms, na.rm = TRUE) / 60000), 2)
+    else
+      round(mean(cleaned_base$clean_df$BPM.2, na.rm = TRUE), 2)
+  } else {
+    avg_hr <- NA_real_
+  }
+
+  results[["e0"]] <- data.frame(
+    ID = pid, Group = group, Epoch = 0,
+    Avg_HR = avg_hr, N_beats = v_base$n_beats,
+    N_expected = v_base$n_expected, Coverage_pct = v_base$coverage_pct,
+    Pct_removed = v_base$pct_removed, Pct_interpolated = pct_interp_base,
+    Max_gap_sec = v_base$max_gap_sec, Longest_cont_sec = v_base$longest_cont_sec,
+    Valid = v_base$valid, Reason = v_base$reason,
+    stringsAsFactors = FALSE
+  )
+
+  # ── Epochs 1-4: Intervention quarters ──────────────────────────────────────
+  df_int <- data %>% filter(event == "intervention") %>% arrange(datetime_local)
+
+  if (has_ibi) cleaned_int <- clean_ibi_slice(df_int) else
+               cleaned_int <- clean_bpm_slice(df_int)
+
+  int_n_raw          <- cleaned_int$n_raw
+  int_n_clean        <- cleaned_int$n_clean
+  timestamps_int_pre <- cleaned_int$clean_df$datetime_local
+
+  if (has_ibi && nrow(cleaned_int$clean_df) >= 3)
+    cleaned_int$clean_df <- interpolate_ibi_spline(cleaned_int$clean_df)
+
+  n_int  <- nrow(cleaned_int$clean_df)
+  int_df <- cleaned_int$clean_df
+
+  if (n_int == 0) {
+    for (e in 1:4) {
+      results[[paste0("e", e)]] <- data.frame(
+        ID = pid, Group = group, Epoch = e,
+        Avg_HR = NA_real_, N_beats = 0L, N_expected = NA_integer_,
+        Coverage_pct = NA_real_, Pct_removed = NA_real_,
+        Pct_interpolated = NA_real_, Max_gap_sec = NA_real_,
+        Longest_cont_sec = NA_real_, Valid = FALSE,
+        Reason = "no intervention data", stringsAsFactors = FALSE
+      )
+    }
+  } else {
+
+    cuts <- cut(seq_len(n_int), breaks = 4, labels = FALSE)
+
+    for (e in 1:4) {
+      ep_df <- int_df[cuts == e, ]
+
+      ep_start_time     <- min(ep_df$datetime_local)
+      ep_end_time       <- max(ep_df$datetime_local)
+      timestamps_ep_pre <- timestamps_int_pre[
+        timestamps_int_pre >= ep_start_time &
+        timestamps_int_pre <= ep_end_time
+      ]
+
+      ep_n_raw       <- round(int_n_raw / 4)
+      ep_n_clean_pre <- round(int_n_clean / 4)
+      ep_pct_removed <- if (ep_n_raw > 0)
+                          round(100 * (ep_n_raw - ep_n_clean_pre) / ep_n_raw, 1)
+                        else 100
+
+      if ("interpolated" %in% names(ep_df)) {
+        n_orig_ep     <- sum(!ep_df$interpolated)
+        n_interp_ep   <- sum(ep_df$interpolated)
+        pct_interp_ep <- if ((n_orig_ep + n_interp_ep) > 0)
+                           round(100 * n_interp_ep / (n_orig_ep + n_interp_ep), 1)
+                         else 0
+      } else {
+        pct_interp_ep <- 0
+      }
+
+      ep_cleaned <- list(
+        clean_df    = ep_df,
+        n_raw       = ep_n_raw,
+        n_clean     = ep_n_clean_pre,
+        pct_removed = ep_pct_removed
+      )
+
+      v_ep <- suppressMessages(validate_epoch(
+        cleaned_result      = ep_cleaned,
+        timestamps_pre      = timestamps_ep_pre,
+        timestamps_post     = ep_df$datetime_local,
+        epoch_label         = paste0("epoch_", e),
+        pid                 = pid,
+        participant_mean_hr = p_hr,
+        pct_interpolated    = pct_interp_ep
+      ))
+
+      if (v_ep$valid) {
+        avg_hr <- if (has_ibi)
+          round(v_ep$n_beats / (sum(ep_df$IBI_ms, na.rm = TRUE) / 60000), 2)
+        else
+          round(mean(ep_df$BPM.2, na.rm = TRUE), 2)
+      } else {
+        avg_hr <- NA_real_
+      }
+
+      results[[paste0("e", e)]] <- data.frame(
+        ID = pid, Group = group, Epoch = e,
+        Avg_HR = avg_hr, N_beats = v_ep$n_beats,
+        N_expected = v_ep$n_expected, Coverage_pct = v_ep$coverage_pct,
+        Pct_removed = v_ep$pct_removed, Pct_interpolated = pct_interp_ep,
+        Max_gap_sec = v_ep$max_gap_sec, Longest_cont_sec = v_ep$longest_cont_sec,
+        Valid = v_ep$valid, Reason = v_ep$reason,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+
+  do.call(rbind, results)
+}
+
+# ── loop over all participants ────────────────────────────────────────────────
+hr_validated_results <- list()
+
+for (pid in all_ids) {
+  obj_name <- paste0(tolower(pid), "_data")
+  if (exists(obj_name))
+    hr_validated_results[[pid]] <- extract_hr_validated(
+      get(obj_name), pid, get_group(pid)
+    )
+}
+
+# ── combine and add % change from baseline ────────────────────────────────────
+hr_validated <- do.call(rbind, hr_validated_results)
+rownames(hr_validated) <- NULL
+
+baseline_hr <- hr_validated %>%
+  filter(Epoch == 0, Valid == TRUE) %>%
+  select(ID, Baseline_HR = Avg_HR)
+
+hr_validated <- hr_validated %>%
+  left_join(baseline_hr, by = "ID") %>%
+  mutate(
+    HR_pct_change = ifelse(
+      Epoch > 0 & !is.na(Avg_HR) & !is.na(Baseline_HR),
+      round((Avg_HR - Baseline_HR) / Baseline_HR * 100, 2),
+      NA_real_
+    )
+  )
+
+# ── output — summary only ─────────────────────────────────────────────────────
+cat("\n============================================================\n")
+cat("INVALID EPOCHS\n")
+cat("============================================================\n")
+invalid_hr <- hr_validated %>%
+  filter(Valid == FALSE) %>%
+  select(ID, Group, Epoch, N_beats, Pct_removed, Max_gap_sec,
+         Pct_interpolated, Reason)
+if (nrow(invalid_hr) == 0) cat("✅ All epochs valid.\n") else print(invalid_hr)
+
+cat("\n============================================================\n")
+cat("GROUP x EPOCH DESCRIPTIVE MEANS (valid epochs only)\n")
+cat("============================================================\n")
+hr_validated %>%
+  filter(Valid == TRUE, Epoch > 0) %>%
+  group_by(Group, Epoch) %>%
+  summarise(
+    n           = n(),
+    Mean_HR     = round(mean(Avg_HR,        na.rm = TRUE), 2),
+    Mean_pct_ch = round(mean(HR_pct_change, na.rm = TRUE), 2),
+    .groups     = "drop"
+  ) %>%
+  print()
+
+write.csv(hr_validated, "hr_epochs_validated.csv", row.names = FALSE)
+cat("\n✅ Saved: hr_epochs_validated.csv\n")
+```
+
+```{r}
+# ============================================================================
+# CHUNK 4 — RMSSD EXTRACTION (FULL WINDOW)
+# ============================================================================
+# Computes RMSSD for baseline and full intervention window per participant.
+#
+# Design: LMM with Phase * Group structure — analyzed in separate script.
+#
+# Processing order per phase:
+#   Step 1: Clean IBI series (physiological bounds, dedup, 3SD)
+#   Step 2: Report gaps > 5s before interpolation
+#   Step 3: Apply cubic spline interpolation for gaps < 10s
+#   Step 4: Compute interpolation percentage
+#   Step 5: Compute RMSSD from original beat pairs only
+#
+# Rules:
+#   Hard exclusion:
+#   - Cleaning > 33%                   (Sleimen-Malkoun et al., 2023)
+#
+#   Warning flags only (not exclusion):
+#   - Gaps > 5s reported               (Quigley et al., 2024)
+#   - Interpolation > 50% flagged      (Benchekroun et al., 2023)
+#
+# Key methodological decision:
+#   RMSSD computed from original-to-original beat pairs only.
+#   Interpolated beats preserve time series continuity but are excluded
+#   from successive difference computation to prevent artificial
+#   inflation or deflation of the HRV estimate.
+#
+# Output: rmssd_validated.csv
+# ============================================================================
+
+library(dplyr)
+
+# ── RMSSD computation — original pairs only ───────────────────────────────────
+compute_rmssd_original_only <- function(clean_df) {
+  if (!"interpolated" %in% names(clean_df)) {
+    ibi <- clean_df$IBI_ms[!is.na(clean_df$IBI_ms)]
+    if (length(ibi) < 2) return(list(rmssd = NA_real_, n_pairs = 0L))
+    return(list(rmssd   = round(sqrt(mean(diff(ibi)^2)), 3),
+                n_pairs = length(ibi) - 1L))
+  }
+
+  n     <- nrow(clean_df)
+  pairs <- logical(n - 1)
+  for (i in seq_len(n - 1)) {
+    pairs[i] <- !clean_df$interpolated[i] && !clean_df$interpolated[i + 1]
+  }
+
+  valid_diffs <- diff(clean_df$IBI_ms)[pairs]
+  valid_diffs <- valid_diffs[!is.na(valid_diffs)]
+
+  if (length(valid_diffs) < 2)
+    return(list(rmssd = NA_real_, n_pairs = length(valid_diffs)))
+
+  list(rmssd   = round(sqrt(mean(valid_diffs^2)), 3),
+       n_pairs = length(valid_diffs))
+}
+
+# ── main extraction function ──────────────────────────────────────────────────
+extract_rmssd <- function(data, pid, group) {
+
+  has_ibi <- "IBI_ms" %in% names(data) && any(!is.na(data$IBI_ms))
+  results <- list()
+
+  for (phase in c("baseline", "intervention")) {
+
+    df_ph <- data %>% filter(event == phase) %>% arrange(datetime_local)
+
+    if (nrow(df_ph) == 0 || !has_ibi) {
+      results[[phase]] <- data.frame(
+        ID = pid, Group = group, Phase = phase,
+        RMSSD = NA_real_, N_beats_original = 0L,
+        N_beats_interpolated = 0L, N_pairs_used = 0L,
+        Pct_removed = NA_real_, Pct_interpolated = NA_real_,
+        Max_gap_sec = NA_real_, N_gaps_over5s = NA_integer_,
+        Valid = FALSE, Reason = "no data",
+        Flag_cleaning = FALSE, Flag_interpolation = FALSE,
+        Flag_gaps = FALSE, stringsAsFactors = FALSE
+      )
+      next
+    }
+
+    # Step 1: clean
+    cleaned     <- clean_ibi_slice(df_ph)
+    n_raw       <- cleaned$n_raw
+    n_clean     <- cleaned$n_clean
+    pct_removed <- if (n_raw > 0) round(100 * (n_raw - n_clean) / n_raw, 1) else 100
+
+    # Hard exclusion: 33% cleaning rule
+    if (pct_removed > 33) {
+      results[[phase]] <- data.frame(
+        ID = pid, Group = group, Phase = phase,
+        RMSSD = NA_real_, N_beats_original = n_clean,
+        N_beats_interpolated = 0L, N_pairs_used = 0L,
+        Pct_removed = pct_removed, Pct_interpolated = 0,
+        Max_gap_sec = NA_real_, N_gaps_over5s = NA_integer_,
+        Valid = FALSE,
+        Reason = sprintf("cleaning removed %.1f%% > 33%%", pct_removed),
+        Flag_cleaning = TRUE, Flag_interpolation = FALSE,
+        Flag_gaps = FALSE, stringsAsFactors = FALSE
+      )
+      next
+    }
+
+    # Step 2: gap report before interpolation
+    timestamps_pre <- cleaned$clean_df$datetime_local
+    gaps_pre       <- gap_scanner(timestamps_pre)
+    flag_gaps      <- gaps_pre$n_gaps_over5s > 0
+
+    # Step 3: cubic spline interpolation
+    if (nrow(cleaned$clean_df) >= 3)
+      cleaned$clean_df <- interpolate_ibi_spline(cleaned$clean_df)
+
+    # Step 4: interpolation percentage
+    if ("interpolated" %in% names(cleaned$clean_df)) {
+      n_orig     <- sum(!cleaned$clean_df$interpolated)
+      n_interp   <- sum(cleaned$clean_df$interpolated)
+      pct_interp <- if ((n_orig + n_interp) > 0)
+                      round(100 * n_interp / (n_orig + n_interp), 1)
+                    else 0
+    } else {
+      n_orig     <- n_clean
+      n_interp   <- 0L
+      pct_interp <- 0
+    }
+
+    flag_interp  <- pct_interp > 50
+
+    # Step 5: compute RMSSD from original pairs only
+    rmssd_result <- compute_rmssd_original_only(cleaned$clean_df)
+
+    results[[phase]] <- data.frame(
+      ID = pid, Group = group, Phase = phase,
+      RMSSD = rmssd_result$rmssd,
+      N_beats_original = n_orig, N_beats_interpolated = n_interp,
+      N_pairs_used = rmssd_result$n_pairs,
+      Pct_removed = pct_removed, Pct_interpolated = pct_interp,
+      Max_gap_sec = gaps_pre$max_gap_sec,
+      N_gaps_over5s = gaps_pre$n_gaps_over5s,
+      Valid = TRUE, Reason = "ok",
+      Flag_cleaning = pct_removed > 33,
+      Flag_interpolation = flag_interp,
+      Flag_gaps = flag_gaps,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  do.call(rbind, results)
+}
+
+# ── loop over all participants ────────────────────────────────────────────────
+rmssd_results <- list()
+
+for (pid in all_ids) {
+  obj_name <- paste0(tolower(pid), "_data")
+  if (exists(obj_name))
+    rmssd_results[[pid]] <- extract_rmssd(get(obj_name), pid, get_group(pid))
+}
+
+# ── combine ───────────────────────────────────────────────────────────────────
+rmssd_validated <- do.call(rbind, rmssd_results)
+rownames(rmssd_validated) <- NULL
+
+# ── output ────────────────────────────────────────────────────────────────────
+cat("\n============================================================\n")
+cat("HARD EXCLUSIONS (33% cleaning rule)\n")
+cat("============================================================\n")
+excluded <- rmssd_validated %>%
+  filter(Valid == FALSE) %>%
+  select(ID, Group, Phase, N_beats_original, Pct_removed, Reason)
+if (nrow(excluded) == 0) cat("✅ No hard exclusions.\n") else print(excluded)
+
+cat("\n============================================================\n")
+cat("WARNING FLAGS — INTERPOLATION > 50% (Benchekroun et al., 2023)\n")
+cat("============================================================\n")
+flagged_interp <- rmssd_validated %>%
+  filter(Flag_interpolation == TRUE) %>%
+  select(ID, Group, Phase, N_beats_original, N_beats_interpolated,
+         Pct_interpolated)
+if (nrow(flagged_interp) == 0)
+  cat("✅ No participants exceeded 50% interpolation threshold.\n") else
+  print(flagged_interp)
+
+cat("\n============================================================\n")
+cat("WARNING FLAGS — GAPS > 5s (Quigley et al., 2024)\n")
+cat("============================================================\n")
+flagged_gaps <- rmssd_validated %>%
+  filter(Flag_gaps == TRUE) %>%
+  select(ID, Group, Phase, N_gaps_over5s, Max_gap_sec)
+if (nrow(flagged_gaps) == 0)
+  cat("✅ No gaps > 5s detected.\n") else
+  print(flagged_gaps)
+
+cat("\n============================================================\n")
+cat("GROUP DESCRIPTIVE MEANS (valid only)\n")
+cat("============================================================\n")
+rmssd_validated %>%
+  filter(Valid == TRUE) %>%
+  group_by(Group, Phase) %>%
+  summarise(
+    n          = n(),
+    Mean_RMSSD = round(mean(RMSSD, na.rm = TRUE), 3),
+    SD_RMSSD   = round(sd(RMSSD,   na.rm = TRUE), 3),
+    .groups    = "drop"
+  ) %>%
+  print()
+
+write.csv(rmssd_validated, "rmssd_validated.csv", row.names = FALSE)
+cat("\n✅ Saved: rmssd_validated.csv\n")
+```
+
+

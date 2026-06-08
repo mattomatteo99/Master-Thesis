@@ -1,0 +1,476 @@
+---
+title: "Physiological Outcomes — LMM Analysis"
+subtitle: "HR and RMSSD across meditation modalities"
+author: "Matteo Roberto Teagno"
+description: "Master Thesis"
+format:
+  pdf:
+    code-overflow: wrap
+    geometry:
+      - left=2cm
+      - right=2cm
+      - top=2cm
+      - bottom=2cm
+execute:
+  message: false
+  warning: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+# ============================================================
+# SETUP & DATA LOADING
+# ============================================================
+
+# --- Libraries ---
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(ggdist)
+library(cowplot)
+library(car)
+library(effects)
+library(moments)
+
+# --- Load HR Data ---
+hr <- read.csv("hr_epochs_validated.csv")
+
+# --- Exclusions & Filtering ---
+excluded_ids <- c("ID28", "ID48", "ID43", "ID10", "ID11", "ID31")
+
+hr_clean <- hr %>%
+  filter(!ID %in% excluded_ids, Valid == TRUE)
+
+# --- Completeness Check (flag participants with < 5 epochs) ---
+hr_clean %>%
+  group_by(ID, Group) %>%
+  summarise(
+    n_epochs       = n(),
+    epochs_present = paste(sort(Epoch), collapse = ","),
+    .groups        = "drop"
+  ) %>%
+  filter(n_epochs < 5) %>%
+  print()
+
+# --- Sample Summary ---
+cat("Total participants:", n_distinct(hr_clean$ID), "\n")
+cat("Total rows:",         nrow(hr_clean),           "\n")
+```
+
+```{r}
+#| label: hr-analysis
+#| warning: false
+#| message: false
+
+# ==============================================================================
+# HR ANALYSIS — LMM
+# Group × Epoch mixed effects model
+# Outcome: Avg_HR
+# ==============================================================================
+
+# --- Custom group colors ---
+custom_colors <- c("Control" = "grey60", "2D" = "#D4AC0D", "VR" = "#006400")
+
+# ==============================================================================
+# 1. DATA PREPARATION
+# ==============================================================================
+# Note: data already loaded as hr_clean in the Setup chunk above.
+# Re-applying factor coding here for self-containment.
+
+hr_clean <- hr_clean %>%
+  mutate(
+    Group = factor(Group, levels = c("Control", "2D", "VR")),
+    ID    = as.factor(ID),
+    Epoch = as.numeric(Epoch)
+  )
+
+cat("Participants included:", n_distinct(hr_clean$ID), "\n")
+cat("Rows included:",         nrow(hr_clean),           "\n")
+cat("\nParticipants per group:\n")
+hr_clean %>% distinct(ID, Group) %>% count(Group) %>% print()
+
+# ==============================================================================
+# 2. DISTRIBUTION CHECK
+# ==============================================================================
+
+# --- Skewness ---
+cat("Avg_HR skewness:", round(skewness(hr_clean$Avg_HR), 3), "\n")
+
+# --- Shapiro-Wilk normality test ---
+cat("\n--- Shapiro-Wilk: Avg_HR ---\n")
+print(shapiro.test(hr_clean$Avg_HR))
+
+# --- Visual distribution check ---
+ggplot(hr_clean, aes(x = Avg_HR)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "white") +
+  geom_density(aes(y = after_stat(count)), color = "red", linewidth = 1) +
+  labs(title = "Distribution of Avg_HR") +
+  theme_classic()
+```
+```{r}
+#| label: hr-lmm
+#| warning: false
+#| message: false
+# ==============================================================================
+# 3. PRIMARY MODEL — LMM (Gaussian)
+# ==============================================================================
+# Fit Gaussian LMM: Group × Epoch with random intercept per participant
+m_avg_hr <- lmer(Avg_HR ~ Group * Epoch + (1|ID),
+                 data = hr_clean)
+
+# --- Omnibus test (Type II ANOVA) ---
+cat("\n--- LMM: Type II ANOVA table ---\n")
+print(Anova(m_avg_hr, type = "II"))
+
+# --- Full model summary ---
+cat("\n--- LMM: Model summary ---\n")
+print(summary(m_avg_hr))
+
+# --- Post-hoc: pairwise group contrasts per epoch (Bonferroni-corrected) ---
+cat("\n--- LMM: Post-hoc group contrasts per epoch (Bonferroni) ---\n")
+emm_lmm <- emmeans(m_avg_hr, ~ Group | Epoch,
+                   at = list(Epoch = c(0, 1, 2, 3, 4)))
+print(pairs(emm_lmm, adjust = "bonferroni"))
+
+# --- Estimated marginal means across epochs (collapsed across groups) ---
+cat("\n--- LMM: EMMs across epochs (collapsed across groups) ---\n")
+emm_epoch <- emmeans(m_avg_hr, ~ Epoch,
+                     at = list(Epoch = c(0, 1, 2, 3, 4)))
+print(emm_epoch)
+```
+
+```{r}
+# ==============================================================================
+# 4. SENSITIVITY CHECK — GLMM (Gamma log link) vs LMM (Gaussian)
+# ==============================================================================
+# HR is strictly positive continuous data, making Gamma family theoretically
+# appropriate. This GLMM is fitted purely as a sensitivity check to verify
+# that conclusions from Model A are not an artifact of the Gaussian assumption.
+
+# --- Fit GLMM ---
+m_avg_hr_glmm <- glmer(Avg_HR ~ Group * Epoch + (1|ID),
+                        data   = hr_clean,
+                        family = Gamma(link = "log"))
+
+# --- Omnibus test (Type II ANOVA) ---
+cat("\n--- GLMM: Type II ANOVA table ---\n")
+print(Anova(m_avg_hr_glmm, type = "II"))
+
+# --- Full model summary ---
+cat("\n--- GLMM: Model summary ---\n")
+print(summary(m_avg_hr_glmm))
+
+# --- Post-hoc: pairwise group contrasts per epoch (Bonferroni-corrected) ---
+cat("\n--- GLMM: Post-hoc group contrasts per epoch (Bonferroni) ---\n")
+emm_glmm <- emmeans(m_avg_hr_glmm, ~ Group | Epoch,
+                     at = list(Epoch = c(0, 1, 2, 3, 4)))
+print(pairs(emm_glmm, adjust = "bonferroni"))
+
+# ==============================================================================
+# MODEL COMPARISON — LMM vs GLMM
+# ==============================================================================
+
+# --- AIC comparison ---
+cat("\n--- AIC comparison: LMM vs GLMM ---\n")
+cat(sprintf("  LMM  (Gaussian):  AIC = %.2f\n", AIC(m_avg_hr)))
+cat(sprintf("  GLMM (Gamma log): AIC = %.2f\n", AIC(m_avg_hr_glmm)))
+cat("  → Lower AIC indicates better fit\n")
+
+# --- Residual diagnostic plots (side by side) ---
+par(mfrow = c(1, 2))
+
+plot(fitted(m_avg_hr), residuals(m_avg_hr),
+     main = "LMM — Fitted vs. Residuals",
+     xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red", lty = 2)
+
+plot(fitted(m_avg_hr_glmm), residuals(m_avg_hr_glmm, type = "pearson"),
+     main = "GLMM — Fitted vs. Pearson Residuals",
+     xlab = "Fitted values", ylab = "Pearson residuals")
+abline(h = 0, col = "red", lty = 2)
+
+par(mfrow = c(1, 1))
+```
+
+
+```{r}
+# ==============================================================================
+# 5. VISUALIZATION — Avg_HR Raincloud Plot
+# ==============================================================================
+p_avg_hr <- ggplot(hr_clean %>% filter(Epoch > 0),
+                   aes(x = factor(Epoch), y = Avg_HR,
+                       fill = Group, color = Group)) +
+  stat_halfeye(adjust = .5, width = .6, .width = 0,
+               justification = -.2, alpha = 0.5) +
+  geom_boxplot(width = .15, outlier.shape = NA, alpha = 0.5) +
+  stat_summary(fun = mean, geom = "line",
+               aes(group = Group), linewidth = 1,
+               position = position_dodge(0.1)) +
+  stat_summary(fun = mean, geom = "point",
+               aes(group = Group), size = 2,
+               position = position_dodge(0.1)) +
+  scale_fill_manual(values  = custom_colors) +
+  scale_color_manual(values = custom_colors) +
+  labs(title    = "Heart Rate Within Meditation Session",
+       subtitle = "Heart rate decreased ~1.8 bpm across the intervention (p = .031);\nno differences between groups",
+       y        = "HR (bpm)",
+       x        = "Epoch") +
+  theme_classic() +
+  theme(legend.position = "right")
+
+print(p_avg_hr)
+
+# Save at high resolution to match the other thesis figures
+ggsave("HR_raincloud.png", p_avg_hr,
+       width = 10, height = 6, dpi = 600, bg = "white")
+```
+
+```{r}
+# ==============================================================================
+# DATA PREPARATION — RMSSD
+# ==============================================================================
+
+# Reload from CSV to guarantee a clean state regardless of other scripts
+rmssd_raw <- read.csv("rmssd_validated.csv")
+
+# --- Exclusions & filtering (all three groups kept) ---
+rmssd_clean <- rmssd_raw %>%
+  filter(!ID %in% excluded_ids, Valid == TRUE) %>%
+  mutate(
+    Group = factor(Group, levels = c("Control", "2D", "VR")),
+    ID    = as.factor(ID),
+    Phase = factor(Phase, levels = c("baseline", "intervention"))
+  )
+
+cat("Participants included:", n_distinct(rmssd_clean$ID), "\n")
+cat("Rows included:",         nrow(rmssd_clean),           "\n")
+cat("\nParticipants per group:\n")
+rmssd_clean %>% distinct(ID, Group) %>% count(Group) %>% print()
+
+# --- Completeness check: flag participants missing a phase ---
+cat("\nCompleteness check — participants with < 2 phases:\n")
+rmssd_clean %>%
+  group_by(ID, Group) %>%
+  summarise(
+    n_phases = n(),
+    phases   = paste(sort(Phase), collapse = ","),
+    .groups  = "drop"
+  ) %>%
+  filter(n_phases < 2) %>%
+  print()
+```
+
+```{r}
+# ==============================================================================
+# 10. MODEL C — RMSSD ~ Phase * Group + (1|ID)
+# ==============================================================================
+# RMSSD is strictly positive, making Gamma family theoretically appropriate.
+# However, the GLMM with Gamma log link failed to converge on this dataset,
+# producing unreliable estimates, and was therefore discarded.
+# This is further supported by the Avg_HR sensitivity check, which confirmed
+# that LMM and GLMM yield identical conclusions when convergence is achieved.
+# Phase is a two-level factor (baseline / intervention).
+# Control is the reference group (2D vs Control, VR vs Control).
+
+# --- Fit LMM ---
+m_rmssd_lmm <- lmer(RMSSD ~ Phase * Group + (1|ID),
+                     data = rmssd_clean)
+
+# --- Omnibus test (Type II ANOVA) ---
+cat("\n--- Type II ANOVA table ---\n")
+print(Anova(m_rmssd_lmm, type = "II"))
+
+# --- Residual normality (post-hoc diagnostic) ---
+cat("\n--- Shapiro-Wilk on residuals ---\n")
+print(shapiro.test(residuals(m_rmssd_lmm)))
+
+# --- Residual diagnostic plot ---
+plot(m_rmssd_lmm, main = "Model C — Fitted vs. Residuals")
+
+# --- Full model summary ---
+cat("\n--- Model summary ---\n")
+print(summary(m_rmssd_lmm))
+
+# ==============================================================================
+# POST-HOC COMPARISONS
+# ==============================================================================
+
+# --- Phase contrasts within each group (baseline vs intervention) ---
+cat("\n--- Post-hoc: Phase contrasts per group (Bonferroni) ---\n")
+emm_phase <- emmeans(m_rmssd_lmm, ~ Phase | Group)
+print(pairs(emm_phase, adjust = "bonferroni"))
+
+# --- Group contrasts at each phase ---
+cat("\n--- Post-hoc: Group contrasts per phase (Bonferroni) ---\n")
+emm_group <- emmeans(m_rmssd_lmm, ~ Group | Phase)
+print(pairs(emm_group, adjust = "bonferroni"))
+
+# --- Estimated marginal means ---
+cat("\n--- Estimated marginal means ---\n")
+emm_means <- emmeans(m_rmssd_lmm, ~ Group | Phase)
+print(emm_means)
+
+# --- Phase marginal means (collapsed across groups) ---
+cat("\n--- Estimated marginal means per phase (all groups collapsed) ---\n")
+emm_phase_collapsed <- emmeans(m_rmssd_lmm, ~ Phase)
+print(emm_phase_collapsed)
+print(pairs(emm_phase_collapsed, adjust = "bonferroni"))
+
+```
+```{r}
+library(patchwork)
+library(cowplot)
+
+# ============================================================================
+# Shared theme for raincloud plots (with border + legend off)
+# ============================================================================
+panel_border_theme <- theme(
+  plot.background  = element_rect(fill = NA, color = "black", linewidth = 0.5),
+  legend.position  = "none",
+  panel.grid.major.y = element_blank()
+)
+
+# ============================================================================
+# 1. HR PLOT (panel A) — subtitle stripped, framed
+# ============================================================================
+p_avg_hr <- ggplot(hr_clean %>% filter(Epoch > 0),
+                   aes(x = factor(Epoch), y = Avg_HR,
+                       fill = Group, color = Group)) +
+  stat_halfeye(adjust = .5, width = .6, .width = 0,
+               justification = -.2, alpha = 0.5) +
+  geom_boxplot(width = .15, outlier.shape = NA, alpha = 0.5) +
+  stat_summary(fun = mean, geom = "line",
+               aes(group = Group), linewidth = 1,
+               position = position_dodge(0.1)) +
+  stat_summary(fun = mean, geom = "point",
+               aes(group = Group), size = 2,
+               position = position_dodge(0.1)) +
+  scale_fill_manual(values  = custom_colors) +
+  scale_color_manual(values = custom_colors) +
+  labs(title = "HR", subtitle = NULL,
+       y = "HR (bpm)", x = "Epoch") +
+  theme_classic(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13, hjust = 0.5,
+                                    margin = margin(b = 8)),
+    axis.title.y     = element_text(face = "bold", size = 11.5,
+                                    margin = margin(r = 10)),
+    axis.title.x     = element_text(face = "bold", size = 11.5,
+                                    margin = margin(t = 8)),
+    axis.text        = element_text(size = 10.5, color = "gray10"),
+    axis.line        = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks       = element_line(linewidth = 0.5, color = "gray10"),
+    plot.margin      = margin(15, 20, 15, 15)
+  ) +
+  panel_border_theme
+
+# ============================================================================
+# 2. RMSSD PLOT (panel B) — subtitle stripped, framed
+# ============================================================================
+p_rmssd <- ggplot(rmssd_clean,
+                  aes(x = Phase, y = RMSSD,
+                      fill = Group, color = Group)) +
+  stat_halfeye(adjust = .5, width = .6, .width = 0,
+               justification = -.2, alpha = 0.5) +
+  geom_boxplot(width = .15, outlier.shape = NA, alpha = 0.5) +
+  stat_summary(fun = mean, geom = "line",
+               aes(group = Group), linewidth = 1,
+               position = position_dodge(0.1)) +
+  stat_summary(fun = mean, geom = "point",
+               aes(group = Group), size = 2,
+               position = position_dodge(0.1)) +
+  scale_fill_manual(values  = custom_colors) +
+  scale_color_manual(values = custom_colors) +
+  labs(title = "RMSSD", subtitle = NULL,
+       y = "RMSSD (ms)", x = "Phase") +
+  theme_classic(base_size = 13) +
+  theme(
+    plot.title       = element_text(face = "bold", size = 13, hjust = 0.5,
+                                    margin = margin(b = 8)),
+    axis.title.y     = element_text(face = "bold", size = 11.5,
+                                    margin = margin(r = 10)),
+    axis.title.x     = element_text(face = "bold", size = 11.5,
+                                    margin = margin(t = 8)),
+    axis.text        = element_text(size = 10.5, color = "gray10"),
+    axis.line        = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks       = element_line(linewidth = 0.5, color = "gray10"),
+    plot.margin      = margin(15, 20, 15, 15)
+  ) +
+  panel_border_theme
+
+# ============================================================================
+# 3. CORNER BADGE HELPER
+# ============================================================================
+add_corner_badge <- function(plot, letter,
+                             x = 0.035, y = 0.96,
+                             box_w = 0.055, box_h = 0.075) {
+  ggdraw(plot) +
+    draw_grob(
+      grid::rectGrob(
+        x = x, y = y,
+        width = box_w, height = box_h,
+        just = c("left", "top"),
+        gp = grid::gpar(fill = "white", col = "black", lwd = 0.8)
+      )
+    ) +
+    draw_text(
+      letter,
+      x = x + box_w/2, y = y - box_h/2,
+      hjust = 0.5, vjust = 0.5,
+      size = 13, fontface = "bold"
+    )
+}
+
+p_HR_badged    <- add_corner_badge(p_avg_hr, "A",
+                                   x = 0.015, y = 0.99,
+                                   box_w = 0.055, box_h = 0.075)
+p_RMSSD_badged <- add_corner_badge(p_rmssd,  "B",
+                                   x = 0.015, y = 0.99,
+                                   box_w = 0.055, box_h = 0.075)
+
+# ============================================================================
+# 4. EXTRACT LEGEND from one of the original plots
+# ============================================================================
+legend_plot <- get_legend(
+  p_avg_hr + theme(legend.position = "top",
+                   legend.title    = element_blank(),
+                   legend.text     = element_text(size = 14),     # was 11
+                   legend.key.size = unit(0.9, "cm"))               # was 0.55
+)
+
+# ============================================================================
+# 5. STACK — legend on top, HR + RMSSD stacked vertically
+# ============================================================================
+panels_col <- (p_HR_badged / p_RMSSD_badged)
+
+combined_HRV <- wrap_plots(
+  legend_plot,
+  panels_col,
+  ncol = 1,
+  heights = c(0.06, 1)        # was c(0.04, 1)
+)
+
+combined_HRV <- combined_HRV +
+  plot_annotation(
+    title = "HR and RMSSD",
+    theme = theme(plot.title = element_text(face = "bold", size = 15,
+                                            hjust = 0.5,
+                                            margin = margin(b = 8)))
+  )
+
+print(combined_HRV)
+
+# ============================================================================
+# 6. SAVE
+# ============================================================================
+ggsave("Combined_HR_RMSSD.png", combined_HRV,
+       width = 11, height = 11, dpi = 600, bg = "white")
+```
+
+```{r}
+
+```
+

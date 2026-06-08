@@ -1,0 +1,1019 @@
+---
+title: "Questionnaires"
+author: "Matteo Roberto Teagno"
+format: pdf
+editor: visual
+---
+
+### Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(car)
+library(emmeans)
+library(ggplot2)
+
+# IDs to exclude across all analyses (n = 6)
+excluded_ids <- c("ID28", "ID48", "ID43", "ID10", "ID11", "ID31")
+```
+
+# Affect Grid
+
+## Arousal
+
+```{r}
+ArousalData <- read_excel("ArousalData.xlsx")
+# view(ArousalData)
+
+## Prepare dataset
+
+# Rename variables
+ArousalData <- ArousalData %>%
+  rename(
+    Participant_ID = ID,
+    Group          = condition,
+    Timepoint      = measure
+  )
+
+# Recode "control" -> "Control"
+ArousalData <- ArousalData %>%
+  mutate(Group = dplyr::recode(Group, "control" = "Control"))
+
+# Normalize Participant_ID to match excluded_ids format (e.g., "ID10")
+# Handles both numeric (10) and string ("10" or "ID10") formats
+ArousalData <- ArousalData %>%
+  mutate(
+    Participant_ID = as.character(Participant_ID),
+    Participant_ID = ifelse(grepl("^ID", Participant_ID),
+                            Participant_ID,
+                            paste0("ID", Participant_ID))
+  )
+
+# Apply the 6-participant exclusion
+ArousalData <- ArousalData %>%
+  filter(!Participant_ID %in% excluded_ids)
+
+# Set factors
+ArousalData$Participant_ID <- as.factor(ArousalData$Participant_ID)
+ArousalData$Group          <- as.factor(ArousalData$Group)
+
+# Timepoint: coerce numeric codes 1-4 to T1-T4
+ArousalData$Timepoint <- factor(ArousalData$Timepoint,
+                                levels = c(1, 2, 3, 4),
+                                labels = c("T1", "T2", "T3", "T4"))
+
+# Relevel Group with Control as reference
+ArousalData$Group <- relevel(ArousalData$Group, ref = "Control")
+
+# Sanity check
+cat("Group Ns after exclusion:\n")
+print(ArousalData %>%
+        distinct(Participant_ID, Group) %>%
+        count(Group))
+
+cat("\nLevels:\n")
+print(levels(ArousalData$Group))
+print(levels(ArousalData$Timepoint))
+str(ArousalData)
+```
+
+### Linear Mixed Model (Group × Timepoint)
+
+
+
+```{r}
+print("--- MODEL: Arousal (Group x Timepoint) ---")
+
+m_Arousal <- lmer(Arousal ~ Group * Timepoint + (1 | Participant_ID),
+                  data = ArousalData, REML = FALSE)
+
+print(Anova(m_Arousal, type = "II"))
+```
+
+
+```{r}
+### Pairwise contrasts (unadjusted, exploratory)
+
+print("--- PAIRWISE CONTRASTS (Group by Timepoint) ---")
+
+emm_Arousal <- emmeans(m_Arousal, ~ Group | Timepoint)
+print(pairs(emm_Arousal, adjust = "none"))
+```
+### Plot
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# ============================================================================
+# 1. PASTEL COLORS  (matching Stroop/SART)
+# ============================================================================
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# ============================================================================
+# 2. THEME
+# ============================================================================
+thesis_theme <- theme_classic(base_size = 13) +
+  theme(
+    legend.position    = "top",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = 11),
+    legend.key.size    = unit(0.55, "cm"),
+    legend.spacing.x   = unit(0.3, "cm"),
+    plot.title         = element_text(face = "bold", size = 14, hjust = 0,
+                                      margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 10.5, color = "gray35", hjust = 0,
+                                      margin = margin(b = 12),
+                                      lineheight = 1.15),
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_line(color = "gray92", linewidth = 0.3),
+    plot.margin        = margin(15, 20, 15, 15)
+  )
+
+# ============================================================================
+# 3. DATA PREP — rename groups so labels match other figures
+# ============================================================================
+ArousalData <- ArousalData %>%
+  mutate(
+    Group = case_when(
+      as.character(Group) == "Control"       ~ "Control",
+      as.character(Group) == "2D"            ~ "2D Meditation",
+      as.character(Group) == "Meditation_2D" ~ "2D Meditation",
+      as.character(Group) == "VR"            ~ "VR Meditation",
+      as.character(Group) == "VR_Meditation" ~ "VR Meditation",
+      TRUE                                    ~ as.character(Group)
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# 4. BRACKETS — T3 between-group contrasts
+#    Control vs 2D (p = .016, *)  AND  Control vs VR (p = .012, *)
+#    Stagger heights so they don't overlap
+# ============================================================================
+dodge_w  <- 0.8
+g_offset <- c(-dodge_w/3, 0, dodge_w/3)   # Control, 2D, VR
+n_tp     <- length(unique(ArousalData$Timepoint))
+t3_x     <- which(sort(unique(as.character(ArousalData$Timepoint))) == "T3")  # numeric x-pos of T3
+
+# Find the highest bar+SE at T3 across all groups
+t3_top <- ArousalData %>%
+  filter(Timepoint == "T3") %>%
+  group_by(Group) %>%
+  summarise(top = mean(Arousal, na.rm = TRUE) +
+                   sd(Arousal,  na.rm = TRUE) / sqrt(n()),
+            .groups = "drop") %>%
+  pull(top) %>% max()
+
+# Inner bracket: Control vs 2D (shorter, lower)
+# Outer bracket: Control vs VR (longer, higher)
+y_inner <- t3_top + 0.35
+y_outer <- t3_top + 0.95
+tick_len <- 0.15
+
+br_T3 <- data.frame(
+  x_start = c(t3_x + g_offset[1], t3_x + g_offset[1]),   # both start at Control
+  x_end   = c(t3_x + g_offset[2], t3_x + g_offset[3]),   # 2D, VR
+  y_pos   = c(y_inner,            y_outer),
+  y_tick  = c(y_inner - tick_len, y_outer - tick_len),
+  label   = c("*",                "*")
+)
+
+y_top_arousal <- y_outer + 0.4
+
+# ============================================================================
+# 5. PLOT
+# ============================================================================
+p_Arousal <- ggplot(ArousalData,
+                    aes(x = Timepoint, y = Arousal, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  geom_segment(data = br_T3, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_end, y = y_pos, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_T3, inherit.aes = FALSE,
+               aes(x = x_start, xend = x_start, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_segment(data = br_T3, inherit.aes = FALSE,
+               aes(x = x_end, xend = x_end, y = y_tick, yend = y_pos),
+               linewidth = 0.45, color = "gray10") +
+  geom_text(data = br_T3, inherit.aes = FALSE,
+            aes(x = (x_start + x_end)/2, y = y_pos, label = label),
+            size = 5, fontface = "bold", vjust = -0.35) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  coord_cartesian(ylim = c(0, y_top_arousal)) +
+  labs(title    = "Arousal across Timepoints",
+       subtitle = "Arousal rose with cognitive load (T2, T4) and dropped after the intervention (T3);\n2D and VR Meditation groups showed lower arousal than Control at T3",
+       y = "Arousal Score", x = NULL) +
+  thesis_theme
+
+print(p_Arousal)
+
+# ============================================================================
+# 6. SAVE
+# ============================================================================
+ggsave("Arousal_Timepoints.png", p_Arousal,
+       width = 7, height = 5.5, dpi = 600, bg = "white")
+```
+
+
+```{r}
+#Change score T3-T1
+Arousal_wide <- ArousalData %>%
+select(Participant_ID, Group, Timepoint, Arousal) %>%
+pivot_wider(names_from = Timepoint, values_from = Arousal)
+View(Arousal_wide)
+Arousal_wide <- Arousal_wide %>%
+mutate(change_T1_T3 = T3 - T1)
+m_change <- lm(change_T1_T3 ~ Group, data = Arousal_wide)
+anova(m_change)
+
+emmeans(m_change, pairwise ~ Group)
+```
+
+## Pleasure 
+
+
+```{r}
+# Load data
+PleasureData <- read_excel("pleasure.xlsx")
+
+# Prepare dataset
+PleasureData <- PleasureData %>%
+  rename(
+    Participant_ID = ID,
+    Group = condition,
+    Timepoint = measure
+  ) %>%
+  mutate(
+    Group = dplyr::recode(Group, "control" = "Control"),
+    Participant_ID = as.character(Participant_ID),
+    Participant_ID = ifelse(grepl("^ID", Participant_ID),
+                            Participant_ID,
+                            paste0("ID", Participant_ID))
+  ) %>%
+  filter(!Participant_ID %in% excluded_ids)
+
+PleasureData$Participant_ID <- as.factor(PleasureData$Participant_ID)
+PleasureData$Timepoint <- factor(PleasureData$Timepoint,
+                                 levels = c(1, 2, 3, 4),
+                                 labels = c("T1", "T2", "T3", "T4"))
+PleasureData$Timepoint <- relevel(PleasureData$Timepoint, ref = "T1")        # ← ADD THIS
+contrasts(PleasureData$Timepoint) <- contr.treatment(levels(PleasureData$Timepoint))  # ← ADD THIS
+PleasureData$Group <- as.factor(PleasureData$Group)
+PleasureData$Group <- relevel(PleasureData$Group, ref = "Control")
+
+cat("Group Ns after exclusion:\n")
+print(PleasureData %>% distinct(Participant_ID, Group) %>% count(Group))
+str(PleasureData)
+```
+
+
+```{r}
+# Linear Mixed Model (Group x Phase)
+print("--- MODEL: Pleasure (Group x Phase) ---")
+m_Pleasure <- lmer(Pleasure ~ Group * Timepoint + (1|Participant_ID),
+data = PleasureData, REML = FALSE)
+print(Anova(m_Pleasure, type="II"))
+
+```
+
+```{r}
+#Exploratory pairwise contrasts
+print("--- PAIRWISE CONTRASTS (Pleasure by Phase) ---")
+emm_Pleasure <- emmeans(m_Pleasure, ~ Group | Timepoint)
+print(pairs(emm_Pleasure, adjust="none"))
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# ============================================================================
+# 1. PASTEL COLORS  (matching all other thesis figures)
+# ============================================================================
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# ============================================================================
+# 2. THEME
+# ============================================================================
+thesis_theme <- theme_classic(base_size = 13) +
+  theme(
+    legend.position    = "top",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = 11),
+    legend.key.size    = unit(0.55, "cm"),
+    legend.spacing.x   = unit(0.3, "cm"),
+    plot.title         = element_text(face = "bold", size = 14, hjust = 0,
+                                      margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 10.5, color = "gray35", hjust = 0,
+                                      margin = margin(b = 12),
+                                      lineheight = 1.15),
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_line(color = "gray92", linewidth = 0.3),
+    plot.margin        = margin(15, 20, 15, 15)
+  )
+
+# ============================================================================
+# 3. DATA PREP — rename groups for consistent labels
+# ============================================================================
+PleasureData <- PleasureData %>%
+  mutate(
+    Group = case_when(
+      tolower(as.character(Group)) == "control" ~ "Control",
+      as.character(Group) == "2D"               ~ "2D Meditation",
+      as.character(Group) == "Meditation_2D"    ~ "2D Meditation",
+      as.character(Group) == "VR"               ~ "VR Meditation",
+      as.character(Group) == "VR_Meditation"    ~ "VR Meditation",
+      TRUE                                       ~ as.character(Group)
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# 4. PLOT
+# ============================================================================
+dodge_w <- 0.8
+
+p_Pleasure <- ggplot(PleasureData,
+                     aes(x = Timepoint, y = Pleasure, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.5, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  labs(title    = "Pleasure across Timepoints",
+       subtitle = "Pleasure dipped with cognitive load (T2, T4) and rose after the intervention (T3);\nno significant differences between groups at any timepoint",
+       y = "Pleasure Score", x = NULL) +
+  thesis_theme
+
+print(p_Pleasure)
+
+# ============================================================================
+# 5. SAVE
+# ============================================================================
+ggsave("Pleasure_Timepoints.png", p_Pleasure,
+       width = 7, height = 5.5, dpi = 600, bg = "white")
+```
+
+
+
+```{r}
+#Change score T3-T1
+Pleasure_wide <- PleasureData %>%
+select(Participant_ID, Group, Timepoint, Pleasure) %>%
+pivot_wider(names_from = Timepoint, values_from = Pleasure)
+View(Pleasure_wide)
+Pleasure_wide <- Pleasure_wide %>%
+mutate(change_T1_T3 = T3 - T1)
+m_change <- lm(change_T1_T3 ~ Group, data = Pleasure_wide)
+anova(m_change)
+emmeans(m_change, pairwise ~ Group)
+```
+By including T1 pleasure as a covariate, you statistically remove the baseline differences before testing for Group effects
+
+```{r}
+# Build a wide-format T1 column to use as covariate
+T1_pleasure <- PleasureData %>%
+  filter(Timepoint == "T1") %>%
+  select(Participant_ID, Pleasure_T1 = Pleasure)
+
+# Merge it back, then run model on T2-T4 only
+PleasureData_adj <- PleasureData %>%
+  left_join(T1_pleasure, by = "Participant_ID") %>%
+  filter(Timepoint != "T1")
+
+# Drop the unused T1 level so the model doesn't complain
+PleasureData_adj$Timepoint <- droplevels(PleasureData_adj$Timepoint)
+PleasureData_adj$Timepoint <- relevel(PleasureData_adj$Timepoint, ref = "T2")        # ← ADDED
+contrasts(PleasureData_adj$Timepoint) <- contr.treatment(levels(PleasureData_adj$Timepoint))  # ← ADDED
+
+# Baseline-adjusted model
+m_Pleasure_adj <- lmer(Pleasure ~ Group * Timepoint + Pleasure_T1 + (1|Participant_ID),
+                       data = PleasureData_adj, REML = FALSE)
+print(Anova(m_Pleasure_adj, type = "II"))
+
+# Pairwise contrasts at T3 (most theoretically meaningful timepoint)
+emm_Pleasure_adj <- emmeans(m_Pleasure_adj, ~ Group | Timepoint)
+print(pairs(emm_Pleasure_adj, adjust = "none"))
+```
+
+```{r}
+library(patchwork)
+library(cowplot)
+
+# ============================================================================
+# COMBINED FIGURE — Arousal (A) and Pleasure (B) stacked vertically
+# Each panel in its own framed box, badges A/B in top-left
+# ============================================================================
+
+panel_border_theme <- theme(
+  plot.background  = element_rect(fill = NA, color = "black", linewidth = 0.5),
+  legend.position  = "none",
+  panel.grid.major.y = element_blank()
+)
+
+# Strip subtitles, keep plain panel titles, add border
+p_Arousal_combined <- p_Arousal +
+  labs(title = "Arousal", subtitle = NULL) +
+  panel_border_theme
+
+p_Pleasure_combined <- p_Pleasure +
+  labs(title = "Pleasure", subtitle = NULL) +
+  panel_border_theme
+
+# Corner badge helper (same as RT and HR/RMSSD figures)
+add_corner_badge <- function(plot, letter,
+                             x = 0.015, y = 0.99,
+                             box_w = 0.030, box_h = 0.075) {
+  ggdraw(plot) +
+    draw_grob(
+      grid::rectGrob(
+        x = x, y = y,
+        width = box_w, height = box_h,
+        just = c("left", "top"),
+        gp = grid::gpar(fill = "white", col = "black", lwd = 0.8)
+      )
+    ) +
+    draw_text(
+      letter,
+      x = x + box_w/2, y = y - box_h/2,
+      hjust = 0.5, vjust = 0.5,
+      size = 13, fontface = "bold"
+    )
+}
+
+p_Arousal_badged  <- add_corner_badge(p_Arousal_combined,  "A")
+p_Pleasure_badged <- add_corner_badge(p_Pleasure_combined, "B")
+
+# Extract shared legend, larger size
+legend_plot <- get_legend(
+  p_Arousal + theme(legend.position = "top",
+                    legend.title    = element_blank(),
+                    legend.text     = element_text(size = 14),
+                    legend.key.size = unit(0.9, "cm"))
+)
+
+# Stack panels vertically, legend on top
+panels_col <- (p_Arousal_badged / p_Pleasure_badged)
+
+combined_AP <- wrap_plots(
+  legend_plot,
+  panels_col,
+  ncol = 1,
+  heights = c(0.06, 1)
+)
+
+# Centered overall title
+combined_AP <- combined_AP +
+  plot_annotation(
+    title = "Affect Grid Ratings across Timepoints",
+    theme = theme(plot.title = element_text(face = "bold", size = 15,
+                                            hjust = 0.5,
+                                            margin = margin(b = 8)))
+  )
+
+print(combined_AP)
+
+ggsave("Combined_ArousalPleasure.png", combined_AP,
+       width = 9, height = 11, dpi = 600, bg = "white")
+```
+
+# SMS 
+
+```{r}
+# Load data
+SMS <- read_excel("DataSMS_final.xlsx")
+
+# Prepare dataset
+SMS <- SMS %>%
+  rename(
+    Participant_ID = ID,
+    Group = condition,
+    Timepoint = measure
+  ) %>%
+  mutate(
+    Group = dplyr::recode(Group, "control" = "Control"),
+    Participant_ID = as.character(Participant_ID),
+    Participant_ID = ifelse(grepl("^ID", Participant_ID),
+                            Participant_ID,
+                            paste0("ID", Participant_ID))
+  ) %>%
+  filter(!Participant_ID %in% excluded_ids)
+
+SMS$Participant_ID <- as.factor(SMS$Participant_ID)
+SMS$Group <- factor(SMS$Group, levels = c("Control", "2D", "VR"))
+SMS$Timepoint <- factor(SMS$Timepoint,
+                        levels = c("T1", "T2", "T3", "T4"))
+SMS$Timepoint <- relevel(SMS$Timepoint, ref = "T1")
+
+cat("Group Ns after exclusion:\n")
+print(SMS %>% distinct(Participant_ID, Group) %>% count(Group))
+str(SMS)
+```
+
+```{r}
+# Total SMS
+print("--- MODEL: Total SMS (Group x Phase) ---")
+m_total <- lmer(Total ~ Group * Timepoint + (1|Participant_ID),
+                data = SMS, REML = FALSE)
+print(Anova(m_total, type="II"))
+
+# Mind
+print("--- MODEL: Mind SMS (Group x Phase) ---")
+m_mind <- lmer(Mind ~ Group * Timepoint + (1|Participant_ID),
+               data = SMS, REML = FALSE)
+print(Anova(m_mind, type="II"))
+
+# Body
+print("--- MODEL: Body SMS (Group x Phase) ---")
+m_Body <- lmer(Body ~ Group * Timepoint + (1|Participant_ID),
+               data = SMS, REML = FALSE)
+print(Anova(m_Body, type="II"))
+
+# Pairwise contrasts
+print("--- PAIRWISE CONTRASTS (Total by Phase) ---")
+emm_total <- emmeans(m_total, ~ Group | Timepoint)
+print(pairs(emm_total, adjust="none"))
+
+print("--- PAIRWISE CONTRASTS (Mind by Phase) ---")
+emm_mind <- emmeans(m_mind, ~ Group | Timepoint)
+print(pairs(emm_mind, adjust="none"))
+
+print("--- PAIRWISE CONTRASTS (Body by Phase) ---")
+emm_body <- emmeans(m_Body, ~ Group | Timepoint)
+print(pairs(emm_body, adjust="none"))
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+# ============================================================================
+# 1. PASTEL COLORS  (matching all other thesis figures)
+# ============================================================================
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# ============================================================================
+# 2. THEME
+# ============================================================================
+thesis_theme <- theme_classic(base_size = 13) +
+  theme(
+    legend.position    = "top",
+    legend.title       = element_blank(),
+    legend.text        = element_text(size = 11),
+    legend.key.size    = unit(0.55, "cm"),
+    legend.spacing.x   = unit(0.3, "cm"),
+    plot.title         = element_text(face = "bold", size = 14, hjust = 0,
+                                      margin = margin(b = 4)),
+    plot.subtitle      = element_text(size = 10.5, color = "gray35", hjust = 0,
+                                      margin = margin(b = 12),
+                                      lineheight = 1.15),
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_blank(),
+    plot.margin        = margin(15, 20, 15, 15)
+  )
+
+# ============================================================================
+# 3. DATA PREP — relabel groups to match other figures
+# ============================================================================
+SMS_plot <- SMS %>%
+  mutate(
+    Group = case_when(
+      as.character(Group) == "Control" ~ "Control",
+      as.character(Group) == "2D"      ~ "2D Meditation",
+      as.character(Group) == "VR"      ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# 4. BRACKET HELPER — Control vs VR at T3
+# ============================================================================
+dodge_w  <- 0.8
+g_offset <- c(-dodge_w/3, 0, dodge_w/3)   # Control, 2D, VR
+
+make_sms_bracket <- function(df, value_col, t3_label = "T3",
+                             padding = 4, tick_len = 1.8, sig = "**") {
+  t3_x <- which(levels(df$Timepoint) == t3_label)
+
+  t3_top <- df %>%
+    filter(Timepoint == t3_label) %>%
+    group_by(Group) %>%
+    summarise(top = mean(.data[[value_col]], na.rm = TRUE) +
+                    sd(.data[[value_col]],  na.rm = TRUE) / sqrt(n()),
+              .groups = "drop") %>%
+    pull(top) %>% max()
+
+  data.frame(
+    x_start = t3_x + g_offset[1],   # Control
+    x_end   = t3_x + g_offset[3],   # VR
+    y_pos   = t3_top + padding,
+    y_tick  = t3_top + padding - tick_len,
+    label   = sig
+  )
+}
+
+add_brackets <- function(p, br) {
+  p +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_start, xend = x_end, y = y_pos, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_start, xend = x_start, y = y_tick, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_end, xend = x_end, y = y_tick, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_text(data = br, inherit.aes = FALSE,
+              aes(x = (x_start + x_end)/2, y = y_pos, label = label),
+              size = 5, fontface = "bold", vjust = -0.35)
+}
+
+# ============================================================================
+# 5. PLOT BUILDER (so we don't repeat 3 times)
+# ============================================================================
+build_sms_plot <- function(df, value_col, plot_title, plot_subtitle,
+                            br_padding, br_tick, sig_label) {
+  br <- make_sms_bracket(df, value_col,
+                         padding = br_padding, tick_len = br_tick,
+                         sig = sig_label)
+  y_top <- br$y_pos + br_padding * 1.3
+  data_max <- max(df[[value_col]], na.rm = TRUE)
+  y_top <- max(y_top, data_max + br_padding * 0.5)
+
+  p <- ggplot(df, aes(x = Timepoint, y = .data[[value_col]], fill = Group)) +
+    stat_summary(fun = mean, geom = "bar",
+                 position = position_dodge(dodge_w),
+                 width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+    geom_point(aes(color = Group),
+               position = position_jitterdodge(jitter.width = 0.18,
+                                                dodge.width = dodge_w),
+               size = 1.5, alpha = 0.6, show.legend = FALSE) +
+    stat_summary(fun.data = mean_se, geom = "errorbar",
+                 width = 0.18, position = position_dodge(dodge_w),
+                 color = "black", linewidth = 0.5) +
+    scale_fill_manual(values = group_colors) +
+    scale_color_manual(values = group_colors) +
+    coord_cartesian(ylim = c(0, y_top)) +
+    labs(title    = plot_title,
+         subtitle = plot_subtitle,
+         y = "Score", x = NULL) +
+    thesis_theme
+
+  add_brackets(p, br)
+}
+
+# ============================================================================
+# 6. THREE PLOTS
+# ============================================================================
+p_total <- build_sms_plot(
+  df            = SMS_plot,
+  value_col     = "Total",
+  plot_title    = "State Mindfulness TOTAL Scores across Timepoints",
+  plot_subtitle = "VR Meditation showed higher Total SMS than Control at T3 (p = .005);\nno significant group differences at other timepoints",
+  br_padding    = 5,
+  br_tick       = 2,
+  sig_label     = "**"
+)
+
+p_mind <- build_sms_plot(
+  df            = SMS_plot,
+  value_col     = "Mind",
+  plot_title    = "SMS — Mind Subscale across Timepoints",
+  plot_subtitle = "VR Meditation showed higher Mind scores than Control at T3 (p = .013);\nparallel pattern to the Total SMS findings",
+  br_padding    = 4,
+  br_tick       = 1.5,
+  sig_label     = "*"
+)
+
+p_body <- build_sms_plot(
+  df            = SMS_plot,
+  value_col     = "Body",
+  plot_title    = " SMS - Body Subscale across Timepoints",
+  plot_subtitle = "VR Meditation showed higher Body scores than Control at T3 (p = .008);\nparallel pattern to the Total SMS findings",
+  br_padding    = 2,
+  br_tick       = 0.8,
+  sig_label     = "**"
+)
+
+print(p_total)
+print(p_mind)
+print(p_body)
+
+# ============================================================================
+# 7. SAVE
+# ============================================================================
+ggsave("SMS_Total.png", p_total, width = 7, height = 5.5, dpi = 600, bg = "white")
+ggsave("SMS_Mind.png",  p_mind,  width = 7, height = 5.5, dpi = 600, bg = "white")
+ggsave("SMS_Body.png",  p_body,  width = 7, height = 5.5, dpi = 600, bg = "white")
+
+```
+
+```{r}
+library(patchwork)
+library(cowplot)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# ============================================================================
+# COMBINED SMS FIGURE
+# Panel A: Total SMS across T1-T4 (full timeline, top, full width)
+# Panel B: Mind at T3 only (bottom left)
+# Panel C: Body at T3 only (bottom right)
+# ============================================================================
+
+group_colors <- c("Control"       = "#B8B8BE",
+                  "2D Meditation" = "#F4A4A4",
+                  "VR Meditation" = "#A4C4F4")
+
+# Shared panel theme (border + no legend per panel + clean axes)
+sms_panel_theme <- theme_classic(base_size = 13) +
+  theme(
+    plot.title         = element_text(face = "bold", size = 13, hjust = 0.5,
+                                      margin = margin(b = 8)),
+    axis.title.y       = element_text(face = "bold", size = 11.5,
+                                      margin = margin(r = 10)),
+    axis.text          = element_text(size = 10.5, color = "gray10"),
+    axis.line          = element_line(linewidth = 0.5, color = "gray10"),
+    axis.ticks         = element_line(linewidth = 0.5, color = "gray10"),
+    panel.grid.major.y = element_blank(),
+    plot.margin        = margin(15, 20, 15, 15),
+    legend.position    = "none",
+    plot.background    = element_rect(fill = NA, color = "black", linewidth = 0.5)
+  )
+
+# ============================================================================
+# DATA PREP — relabel groups, prepare T3-only subsets
+# ============================================================================
+SMS_plot <- SMS %>%
+  mutate(
+    Group = case_when(
+      as.character(Group) == "Control" ~ "Control",
+      as.character(Group) == "2D"      ~ "2D Meditation",
+      as.character(Group) == "VR"      ~ "VR Meditation"
+    ),
+    Group = factor(Group, levels = c("Control", "2D Meditation", "VR Meditation"))
+  )
+
+# ============================================================================
+# BRACKET HELPERS
+# ============================================================================
+dodge_w  <- 0.8
+g_offset <- c(-dodge_w/3, 0, dodge_w/3)
+
+make_full_timeline_bracket <- function(df, value_col, t3_label = "T3",
+                                       padding = 6, tick_len = 2.5, sig = "**") {
+  t3_x <- which(levels(df$Timepoint) == t3_label)
+  t3_top <- df %>%
+    filter(Timepoint == t3_label) %>%
+    group_by(Group) %>%
+    summarise(top = mean(.data[[value_col]], na.rm = TRUE) +
+                    sd(.data[[value_col]],  na.rm = TRUE) / sqrt(n()),
+              .groups = "drop") %>%
+    pull(top) %>% max()
+  data.frame(
+    x_start = t3_x + g_offset[1],
+    x_end   = t3_x + g_offset[3],
+    y_pos   = t3_top + padding,
+    y_tick  = t3_top + padding - tick_len,
+    label   = sig
+  )
+}
+
+make_t3_bracket <- function(df, padding, tick_len, sig) {
+  panel_top <- df %>%
+    group_by(Group) %>%
+    summarise(top = mean(Score, na.rm = TRUE) +
+                    sd(Score,  na.rm = TRUE) / sqrt(n()),
+              .groups = "drop") %>%
+    pull(top) %>% max()
+  data.frame(
+    x_start = 1, x_end = 3,
+    y_pos   = panel_top + padding,
+    y_tick  = panel_top + padding - tick_len,
+    label   = sig
+  )
+}
+
+add_brackets <- function(p, br) {
+  p +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_start, xend = x_end, y = y_pos, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_start, xend = x_start, y = y_tick, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_segment(data = br, inherit.aes = FALSE,
+                 aes(x = x_end, xend = x_end, y = y_tick, yend = y_pos),
+                 linewidth = 0.45, color = "gray10") +
+    geom_text(data = br, inherit.aes = FALSE,
+              aes(x = (x_start + x_end)/2, y = y_pos, label = label),
+              size = 5, fontface = "bold", vjust = -0.35)
+}
+
+# ============================================================================
+# PANEL A — Total SMS across T1–T4
+# ============================================================================
+br_total <- make_full_timeline_bracket(SMS_plot, "Total",
+                                       padding = 6, tick_len = 2.5, sig = "**")
+y_top_total <- br_total$y_pos + 5
+
+p_A_raw <- ggplot(SMS_plot, aes(x = Timepoint, y = Total, fill = Group)) +
+  stat_summary(fun = mean, geom = "bar",
+               position = position_dodge(dodge_w),
+               width = 0.7, color = "black", linewidth = 0.4, alpha = 0.95) +
+  geom_point(aes(color = Group),
+             position = position_jitterdodge(jitter.width = 0.18,
+                                              dodge.width = dodge_w),
+             size = 1.4, alpha = 0.6, show.legend = FALSE) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.18, position = position_dodge(dodge_w),
+               color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = group_colors) +
+  scale_color_manual(values = group_colors) +
+  coord_cartesian(ylim = c(0, y_top_total)) +
+  labs(title = "Total SMS", y = "Score", x = NULL) +
+  sms_panel_theme
+
+p_A_raw <- add_brackets(p_A_raw, br_total)
+
+# ============================================================================
+# PANEL B — Mind at T3, PANEL C — Body at T3
+# ============================================================================
+mind_t3 <- SMS_plot %>% filter(Timepoint == "T3") %>%
+  select(Participant_ID, Group, Score = Mind)
+body_t3 <- SMS_plot %>% filter(Timepoint == "T3") %>%
+  select(Participant_ID, Group, Score = Body)
+
+br_mind <- make_t3_bracket(mind_t3, padding = 4.5, tick_len = 1.8, sig = "*")
+br_body <- make_t3_bracket(body_t3, padding = 2,   tick_len = 0.8, sig = "**")
+
+build_t3_subscale <- function(df, br, panel_title) {
+  y_top <- br$y_pos + br$y_pos * 0.05
+  p <- ggplot(df, aes(x = Group, y = Score, fill = Group)) +
+    stat_summary(fun = mean, geom = "bar",
+                 width = 0.65, color = "black", linewidth = 0.4, alpha = 0.95) +
+    geom_point(aes(color = Group),
+               position = position_jitter(width = 0.12, seed = 1),
+               size = 1.6, alpha = 0.6, show.legend = FALSE) +
+    stat_summary(fun.data = mean_se, geom = "errorbar",
+                 width = 0.18, color = "black", linewidth = 0.5) +
+    scale_fill_manual(values = group_colors) +
+    scale_color_manual(values = group_colors) +
+    scale_x_discrete(labels = c("Control"="Control",
+                                "2D Meditation"="2D",
+                                "VR Meditation"="VR")) +
+    coord_cartesian(ylim = c(0, y_top)) +
+    labs(title = panel_title, y = "Score", x = NULL) +
+    sms_panel_theme
+  add_brackets(p, br)
+}
+
+p_B_raw <- build_t3_subscale(mind_t3, br_mind, "Mind Subscale at T3")
+p_C_raw <- build_t3_subscale(body_t3, br_body, "Body Subscale at T3")
+
+# ============================================================================
+# CORNER BADGES
+# ============================================================================
+add_corner_badge <- function(plot, letter,
+                             x = 0.015, y = 0.99,
+                             box_w = 0.030, box_h = 0.075) {
+  ggdraw(plot) +
+    draw_grob(
+      grid::rectGrob(
+        x = x, y = y,
+        width = box_w, height = box_h,
+        just = c("left", "top"),
+        gp = grid::gpar(fill = "white", col = "black", lwd = 0.8)
+      )
+    ) +
+    draw_text(
+      letter,
+      x = x + box_w/2, y = y - box_h/2,
+      hjust = 0.5, vjust = 0.5,
+      size = 13, fontface = "bold"
+    )
+}
+
+# Panel A is wider (full width), B and C are narrower (half each)
+# Adjust box_w so A's badge isn't too wide and B/C aren't too narrow
+p_A <- add_corner_badge(p_A_raw, "A", box_w = 0.025, box_h = 0.07)
+p_B <- add_corner_badge(p_B_raw, "B", box_w = 0.045, box_h = 0.075)
+p_C <- add_corner_badge(p_C_raw, "C", box_w = 0.045, box_h = 0.075)
+
+# ============================================================================
+# LEGEND
+# ============================================================================
+legend_plot <- get_legend(
+  p_A_raw + theme(legend.position = "top",
+                  legend.title    = element_blank(),
+                  legend.text     = element_text(size = 14),
+                  legend.key.size = unit(0.9, "cm"))
+)
+
+# ============================================================================
+# COMBINE — legend on top, A full width, B+C side by side below
+# ============================================================================
+bottom_row <- (p_B | p_C)
+panels_block <- p_A / bottom_row
+
+combined_SMS <- wrap_plots(
+  legend_plot,
+  panels_block,
+  ncol = 1,
+  heights = c(0.04, 1)
+)
+
+combined_SMS <- combined_SMS +
+  plot_annotation(
+    title = "State Mindfulness Findings",
+    theme = theme(plot.title = element_text(face = "bold", size = 16,
+                                            hjust = 0.5,
+                                            margin = margin(b = 12)))
+  )
+
+print(combined_SMS)
+
+# ============================================================================
+# SAVE
+# ============================================================================
+ggsave("Combined_SMS.png", combined_SMS,
+       width = 14, height = 10, dpi = 600, bg = "white")
+```
+
+
+
+```{r}
+#Calculate the change scores
+SMS_wide <- SMS %>%
+pivot_wider(
+id_cols = c(Participant_ID, Group),
+names_from = Timepoint,
+values_from = c(Total, Mind, Body)
+)
+View(SMS_wide)
+SMS_wide <- SMS_wide %>%
+mutate(
+change_Total = Total_T3 - Total_T1,
+change_Mind = Mind_T3 - Mind_T1,
+change_Body = Body_T3 - Body_T1
+)
+m_total_change <- lm(change_Total ~ Group, data = SMS_wide)
+anova(m_total_change)
+```
+
+```{r}
+emmeans(m_total_change, pairwise ~ Group)
+
+m_mind_change <- lm(change_Mind ~ Group, data = SMS_wide)
+anova(m_mind_change)
+emmeans(m_mind_change, pairwise ~ Group)
+
+m_body_change <- lm(change_Body ~ Group, data = SMS_wide)
+anova(m_body_change)
+emmeans(m_body_change, pairwise ~ Group)
+```
+
